@@ -1,3 +1,4 @@
+//Translated from the java server version of webspeak
 export class Vec3d {
     public readonly x: number;
     public readonly y: number;
