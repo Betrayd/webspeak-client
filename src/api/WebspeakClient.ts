@@ -2,6 +2,7 @@ import {WebspeakEvent} from "./event/Event";
 import type {WebspeakConfig} from "./WebspeakConfig.ts";
 import {RTCSignalingMessages} from "./rtc/RTCSignalingMessages.ts";
 import {RTCConnectionWrapper} from "./rtc/RTCConnectionWrapper.ts";
+import type {AudioSource} from "./AudioSource.ts";
 
 export type DisconnectEvent = {
     readonly statusCode: number;
@@ -11,6 +12,11 @@ export type DisconnectEvent = {
 export class WebSpeakClient {
     private readonly _webSpeakConfig: WebspeakConfig;
     private readonly _fatalErrorEvent: WebspeakEvent.Invokable<unknown> = WebspeakEvent.create();
+    private readonly _audioSourceAddedEvent: WebspeakEvent.Invokable<AudioSource> = WebspeakEvent.create();
+    private readonly _audioSourceRemovedEvent: WebspeakEvent.Invokable<AudioSource> = WebspeakEvent.create();
+    private readonly _audioSourcesClearedEvent: WebspeakEvent.Invokable<void> = WebspeakEvent.create();
+
+    //private readonly _audioSources:Map<string, AudioSource> = new Map();
 
     private _isFatal: boolean = false;
     private _rtcConnection?: RTCConnectionWrapper;
@@ -301,6 +307,27 @@ export class WebSpeakClient {
      */
     public get onFatalError(): WebspeakEvent<unknown>{
         return this._fatalErrorEvent;
+    }
+
+    /**
+     * Called when an audio source is added to the connection
+     */
+    public get onAudioSourceAdded(): WebspeakEvent<AudioSource>{
+        return this._audioSourceAddedEvent;
+    }
+
+    /**
+     * Called when an audio source is added from the connection
+     */
+    public get onAudioSourceRemoved(): WebspeakEvent<AudioSource>{
+        return this._audioSourceRemovedEvent;
+    }
+
+    /**
+     * Called when audio sources are cleared. All previously created audio sources are no longer valid after this
+     */
+    public get onAudioSourcesCleared(): WebspeakEvent<void>{
+        return this._audioSourcesClearedEvent;
     }
 
     /**
