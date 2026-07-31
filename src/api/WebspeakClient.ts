@@ -1,22 +1,43 @@
 import {WebspeakEvent} from "./event/Event";
 import type {WebspeakConfig} from "./WebspeakConfig.ts";
-import {RTCSignalingMessages} from "./rtc/RTCSignalingMessages.ts";
-import {RTCConnectionWrapper} from "./rtc/RTCConnectionWrapper.ts";
-import type {AudioSource} from "./AudioSource.ts";
+import {RTCSignalingMessages} from "./rtc/signaling/RTCSignalingMessages.ts";
+import {RTCConnectionWrapper} from "./rtc/signaling/RTCConnectionWrapper.ts";
+import {AudioSource} from "./AudioSource.ts";
+import {ReliableMessages} from "./rtc/ReliableMessages.ts";
+import {Vec3d} from "./Vec3d.ts";
 
 export type DisconnectEvent = {
     readonly statusCode: number;
     readonly reason: String;
 }
 
+export type AudioProfileAddedEvent = {
+    readonly uid: string;
+    readonly name: string;
+    readonly id: number | null | undefined;
+}
+
+export type AudioProfileUpdateEvent = {
+    readonly uid: string;
+    readonly id: number | null | undefined;
+}
+
+export type AudioProfileRemoveEvent = {
+    readonly uid: string;
+}
+
 export class WebSpeakClient {
     private readonly _webSpeakConfig: WebspeakConfig;
+
     private readonly _fatalErrorEvent: WebspeakEvent.Invokable<unknown> = WebspeakEvent.create();
     private readonly _audioSourceAddedEvent: WebspeakEvent.Invokable<AudioSource> = WebspeakEvent.create();
     private readonly _audioSourceRemovedEvent: WebspeakEvent.Invokable<AudioSource> = WebspeakEvent.create();
-    private readonly _audioSourcesClearedEvent: WebspeakEvent.Invokable<void> = WebspeakEvent.create();
+    private readonly _audioProfileAddedEvent: WebspeakEvent.Invokable<AudioProfileAddedEvent> = WebspeakEvent.create();
+    private readonly _audioProfileUpdatedEvent: WebspeakEvent.Invokable<AudioProfileUpdateEvent> = WebspeakEvent.create();
+    private readonly _audioProfileRemovedEvent: WebspeakEvent.Invokable<AudioProfileRemoveEvent> = WebspeakEvent.create();
+    private readonly _connectionResetEvent: WebspeakEvent.Invokable<void> = WebspeakEvent.create();
 
-    //private readonly _audioSources:Map<string, AudioSource> = new Map();
+    private readonly _audioSources:Map<number, AudioSource> = new Map();
 
     private _isFatal: boolean = false;
     private _rtcConnection?: RTCConnectionWrapper;
@@ -41,18 +62,7 @@ export class WebSpeakClient {
         for(let i = 0; i < this.webSpeakConfig.retryAttempts; i++){
             try{
                 await this.connectSingle();
-                if(this._rtcConnection === undefined){
-                    this._isFatal = true;
-                    this._fatalErrorEvent.invoke(new Error("We've reached an unreachable state. Anything is possible. The limits were in our heads all along. Follow your dreams. https://xkcd.com/2200/"));
-                    return;
-                }
-                const thisCon: RTCConnectionWrapper = this._rtcConnection;
-                const onConnectionStateChange = () => {
-                    if (thisCon.rtcConnection.connectionState === "failed" || thisCon.rtcConnection.connectionState === "closed") {
-                        this.connectRTC();
-                    }
-                };
-                this._rtcConnection.rtcConnection.addEventListener("iceconnectionstatechange", onConnectionStateChange);
+                this.rtcConnectionEstablished();
                 return;
             }
             catch(error: unknown){
@@ -106,27 +116,28 @@ export class WebSpeakClient {
                     const message: any = JSON.parse(event.data);
                     console.log("received message from websocket relay", message);
 
-                    switch (message.type){
-                        case RTCSignalingMessages.iceCandidate.TYPE:
+                    switch (message.type) {
+                        case RTCSignalingMessages.iceCandidate.TYPE: {
                             const candidateInfo: RTCIceCandidateInit = {
                                 candidate: message.spd,
                                 sdpMid: message.sdpMiddle,
                                 sdpMLineIndex: message.sdpAgainMLineIndex,
                             };
-                            if(attemptedRtcCon === undefined || attemptedRtcCon.rtcConnection.remoteDescription === null){
+                            if (attemptedRtcCon === undefined || attemptedRtcCon.rtcConnection.remoteDescription === null) {
                                 pendingCandidates.push(candidateInfo);
-                            }else{
+                            } else {
                                 try {
                                     await attemptedRtcCon.rtcConnection.addIceCandidate(candidateInfo);
-                                }
-                                catch(error){
+                                } catch (error) {
                                     console.error("Relay connection error adding ice candidate", error);
                                 }
                             }
                             break;
-                        case RTCSignalingMessages.sessionDescription.TYPE:
+                        }
+                        case RTCSignalingMessages.sessionDescription.TYPE: {
+                            const remoteDesc: RTCSignalingMessages.sessionDescription = new RTCSignalingMessages.sessionDescription(message.RTCSdpType, message.sdp);
                             //Create the RTC connection if we don't have one yet
-                            if(attemptedRtcCon === undefined) {
+                            if (attemptedRtcCon === undefined) {
                                 attemptedRtcCon = new RTCConnectionWrapper(this.webSpeakConfig.rtcConfiguration);
 
                                 //send local ice candidates
@@ -141,7 +152,7 @@ export class WebSpeakClient {
                                             if (hasNotResolved) {
                                                 relayConnection.send(RTCSignalingMessages.write(candidatePacket));
                                             }
-                                        }else{
+                                        } else {
                                             console.error("Could not send local candidate because web socket was not open")
                                         }
                                     }
@@ -151,7 +162,7 @@ export class WebSpeakClient {
                                 const onConnectionStateChange = () => {
                                     if (attemptedRtcCon?.rtcConnection.connectionState === "connected") {
                                         attemptedRtcCon?.rtcConnection.removeEventListener("connectionstatechange", onConnectionStateChange);
-                                        if(hasNotResolved){
+                                        if (hasNotResolved) {
                                             hasNotResolved = false;
                                             relayConnection.close();
                                             this._rtcConnection = attemptedRtcCon;
@@ -160,7 +171,7 @@ export class WebSpeakClient {
                                     } else if (attemptedRtcCon?.rtcConnection.connectionState === "failed" || attemptedRtcCon?.rtcConnection.connectionState === "closed") {
                                         attemptedRtcCon?.rtcConnection.removeEventListener("connectionstatechange", onConnectionStateChange);
                                         console.error("Connection state change failed");
-                                        if(hasNotResolved) {
+                                        if (hasNotResolved) {
                                             hasNotResolved = false;
                                             relayConnection.close();
                                             reject(new Error("Connection state change failed"));
@@ -169,20 +180,22 @@ export class WebSpeakClient {
                                 };
 
                                 attemptedRtcCon.rtcConnection.addEventListener("connectionstatechange", onConnectionStateChange);
-                            }else{
+                            } else {
                                 console.log("Relay connection Appending new remote session description");
                             }
 
                             //set the remote description
                             try {
-                                await attemptedRtcCon?.rtcConnection.setRemoteDescription({ type: message.getRTCSdpType(), sdp: message.sdp });
+                                await attemptedRtcCon?.rtcConnection.setRemoteDescription({
+                                    type: remoteDesc.getRTCSdpType(),
+                                    sdp: remoteDesc.sdp,
+                                });
 
                                 //add pending ice candidates
-                                for(const candidate of pendingCandidates){
+                                for (const candidate of pendingCandidates) {
                                     try {
                                         await attemptedRtcCon?.rtcConnection.addIceCandidate(candidate);
-                                    }
-                                    catch(error){
+                                    } catch (error) {
                                         console.error("Relay connection error adding ice candidate", error);
                                     }
                                 }
@@ -194,16 +207,16 @@ export class WebSpeakClient {
                                     try {
                                         await attemptedRtcCon?.rtcConnection.setLocalDescription(answer);
 
-                                        if(relayConnection.readyState === WebSocket.OPEN){
+                                        if (relayConnection.readyState === WebSocket.OPEN) {
                                             const answerPacket: RTCSignalingMessages.sessionDescription = new RTCSignalingMessages.sessionDescription(
                                                 RTCSignalingMessages.sessionDescription.parseRTCSdpType(answer.type), answer.sdp
                                             );
-                                            if(hasNotResolved){
+                                            if (hasNotResolved) {
                                                 relayConnection.send(RTCSignalingMessages.write(answerPacket));
                                             }
-                                        }else{
+                                        } else {
                                             console.error("Could not send answer since websocket was not open");
-                                            if(hasNotResolved){
+                                            if (hasNotResolved) {
                                                 hasNotResolved = false;
                                                 this._isFatal = true;
                                                 relayConnection.close();
@@ -212,7 +225,7 @@ export class WebSpeakClient {
                                         }
                                     } catch (error: unknown) {
                                         console.error("Relay connection Could not set local description", error);
-                                        if(hasNotResolved){
+                                        if (hasNotResolved) {
                                             hasNotResolved = false;
                                             relayConnection.close();
                                             reject(new Error("Relay connection failed to set local description"));
@@ -220,7 +233,7 @@ export class WebSpeakClient {
                                     }
                                 } catch (error: unknown) {
                                     console.error("Relay connection Could not generate answer", error);
-                                    if(hasNotResolved){
+                                    if (hasNotResolved) {
                                         hasNotResolved = false;
                                         relayConnection.close();
                                         reject(new Error("Relay connection failed to generate answer"));
@@ -228,16 +241,20 @@ export class WebSpeakClient {
                                 }
                             } catch (error: unknown) {
                                 console.error("Relay connection could not set remote description", error);
-                                if(hasNotResolved){
+                                if (hasNotResolved) {
                                     hasNotResolved = false;
                                     relayConnection.close();
                                     reject(new Error("Relay connection failed to set remote description"));
                                 }
                             }
                             break;
+                        }
+                        default: {
+                            console.error("Received unknown relay message type");
+                        }
                     }
-                } catch {
-                    console.error("Could not parse JSON from websocket on server");
+                } catch(error: unknown) {
+                    console.error("Could not parse JSON from websocket on server", error);
                     if(hasNotResolved){
                         hasNotResolved = false;
                         this._isFatal = true;
@@ -289,11 +306,130 @@ export class WebSpeakClient {
         throw new Error("Not Yet Implemented");
     }*/
 
+    private rtcConnectionEstablished(): void{
+        if(this._rtcConnection === undefined){
+            this._isFatal = true;
+            this._fatalErrorEvent.invoke(new Error("We've reached an unreachable state. Anything is possible. The limits were in our heads all along. Follow your dreams. https://xkcd.com/2200/"));
+            return;
+        }
+        const thisCon: RTCConnectionWrapper = this._rtcConnection;
+        const onConnectionStateChange = () => {
+            if (thisCon.rtcConnection.connectionState === "failed" || thisCon.rtcConnection.connectionState === "closed") {
+                this.connectRTC();
+            }
+        };
+        thisCon.rtcConnection.addEventListener("iceconnectionstatechange", onConnectionStateChange);
+
+        thisCon.onReliablePacketReceived.addListener((event: string) => {
+            try {
+                const message: any = JSON.parse(event);
+                console.log("received message from websocket relay", message);
+
+                switch (message.type) {
+                    case RTCSignalingMessages.iceCandidate.TYPE: {
+                        const candidateInfo: RTCIceCandidateInit = {
+                            candidate: message.spd,
+                            sdpMid: message.sdpMiddle,
+                            sdpMLineIndex: message.sdpAgainMLineIndex,
+                        };
+                        (async () => {
+                            try {
+                                await thisCon.rtcConnection.addIceCandidate(candidateInfo);
+                            } catch (error) {
+                                console.error("Relay connection error adding ice candidate", error);
+                            }
+                        })();
+                        break;
+                    }
+                    case RTCSignalingMessages.sessionDescription.TYPE: {
+                        const remoteDesc: RTCSignalingMessages.sessionDescription = new RTCSignalingMessages.sessionDescription(message.RTCSdpType, message.sdp);
+                        (async () => {
+                            try {
+                                await thisCon.rtcConnection.setRemoteDescription({
+                                    type: remoteDesc.getRTCSdpType(),
+                                    sdp: remoteDesc.sdp,
+                                });
+
+                                //generate and send answer
+                                try {
+                                    const answer: RTCSessionDescriptionInit = await thisCon.rtcConnection.createAnswer();
+
+                                    try {
+                                        await thisCon.rtcConnection.setLocalDescription(answer);
+
+                                        if (thisCon.isOpen()) {
+                                            const answerPacket: RTCSignalingMessages.sessionDescription = new RTCSignalingMessages.sessionDescription(
+                                                RTCSignalingMessages.sessionDescription.parseRTCSdpType(answer.type), answer.sdp
+                                            );
+                                            thisCon.sendReliablePacket(RTCSignalingMessages.write(answerPacket));
+                                        } else {
+                                            console.error("Could not send answer from reliable connection channel");
+                                        }
+                                    } catch (error: unknown) {
+                                        console.error("Could not set local description from reliable connection channel", error);
+                                    }
+                                } catch (error: unknown) {
+                                    console.error("could not generate answer from reliable connection channel", error);
+                                }
+                            } catch (error: unknown) {
+                                console.error("Could not set remote description from reliable connection channel", error);
+                            }
+                        })();
+                        break;
+                    }
+                    case ReliableMessages.addAudioSource.TYPE: {
+                        const addAudioPacket: ReliableMessages.addAudioSource = new ReliableMessages.addAudioSource(message.id, message.config, message.pos);
+                        const audioSource: AudioSource = new AudioSource(addAudioPacket.id);
+                        if (addAudioPacket.config) {
+                            audioSource.setAudioSourceConfig(AudioSource.Config.fromJson(addAudioPacket.config));
+                        }
+                        if (addAudioPacket.pos) {
+                            const initialPos: Vec3d = Vec3d.fromJson(addAudioPacket.pos);
+                            audioSource.setPos(initialPos);
+                        }
+                        this._audioSources.set(audioSource.id, audioSource);
+                        this._audioSourceAddedEvent.invoke(audioSource);
+                        break;
+                    }
+                    case ReliableMessages.removeAudioSource.TYPE: {
+                        const removeAudioPacket: ReliableMessages.removeAudioSource = new ReliableMessages.removeAudioSource(message.id);
+                        const audioSource: AudioSource | undefined = this._audioSources.get(removeAudioPacket.id)
+                        if (audioSource) {
+                            this._audioSources.delete(removeAudioPacket.id);
+                            this._audioSourceRemovedEvent.invoke(audioSource);
+                        }
+                        break;
+                    }
+                    case ReliableMessages.addAudioProfile.TYPE: {
+                        const audioProfile: ReliableMessages.addAudioProfile = new ReliableMessages.addAudioProfile(message.id, message.uid, message.name);
+
+                        break;
+                    }
+                    default: {
+                        console.error("Received unknown reliable channel message type", message.type);
+                    }
+                }
+            }
+            catch (error: unknown)
+            {
+                console.error("Failed to parse JSON from reliable connection channel", error);
+            }
+        });
+    }
+
+    /**
+     * Gets the audio source from the map using an audio source id
+     * @param id the id of the aduio source
+     */
+    public getAudioSource(id: number): AudioSource | undefined{
+        return this._audioSources.get(id);
+    }
+
     /**
      * Trys to set the audio track of the connection to the server
-     * @param track The track to set it to.
+     * @param track The track to set it to. ```null``` to clear
      */
-    public async setMic(track: MediaStreamTrack){
+    public async setMic(track: MediaStreamTrack | null){
         if(this._rtcConnection !== undefined && this._rtcConnection.isOpen()){
             return this._rtcConnection.setMicTrack(track);
         }
@@ -324,10 +460,31 @@ export class WebSpeakClient {
     }
 
     /**
-     * Called when audio sources are cleared. All previously created audio sources are no longer valid after this
+     * Called whenever the server sends a new audio profile
      */
-    public get onAudioSourcesCleared(): WebspeakEvent<void>{
-        return this._audioSourcesClearedEvent;
+    public get onAudioProfileAdded(): WebspeakEvent<AudioProfileAddedEvent>{
+        return this._audioProfileAddedEvent;
+    }
+
+    /**
+     * Called whenever the server updates an audio profile's audio source id
+     */
+    public get onAudioProfileUpdated(): WebspeakEvent<AudioProfileUpdateEvent>{
+        return this._audioProfileUpdatedEvent;
+    }
+
+    /**
+     * Called whenever the server requests to remove an audio profile
+     */
+    public get onAudioProfileRemoved(): WebspeakEvent<AudioProfileRemoveEvent>{
+        return this._audioProfileRemovedEvent;
+    }
+
+    /**
+     * Called when connection automatically reset. All previously created audio sources and audio profiles are no longer valid after this
+     */
+    public get onConnectionReset(): WebspeakEvent<void>{
+        return this._connectionResetEvent;
     }
 
     /**

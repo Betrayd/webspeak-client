@@ -1,5 +1,12 @@
 //Translated from the java server version of webspeak
 export class Vec3d {
+    public static fromJson(json: Array<number>): Vec3d{
+        if(json.length != 3){
+            throw new Error("Vec3d: json array length must be 3");
+        }
+        return new Vec3d(json[0], json[1], json[2]);
+    }
+
     public readonly x: number;
     public readonly y: number;
     public readonly z: number;

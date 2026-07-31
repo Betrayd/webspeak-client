@@ -1,8 +1,8 @@
-import {WebspeakEvent} from "../event/Event.ts";
+import {WebspeakEvent} from "../../event/Event.ts";
 
 export class RTCConnectionWrapper {
     private readonly _rtcConnection: RTCPeerConnection;
-    private readonly _reliablePacketReceivedEvent: WebspeakEvent.Invokable<String> = WebspeakEvent.create();
+    private readonly _reliablePacketReceivedEvent: WebspeakEvent.Invokable<string> = WebspeakEvent.create();
     private readonly _unreliablePacketReceivedEvent: WebspeakEvent.Invokable<Uint8Array> = WebspeakEvent.create();
 
     private _reliableChannel?: RTCDataChannel;
@@ -43,7 +43,7 @@ export class RTCConnectionWrapper {
         return this._rtcConnection;
     }
 
-    public get onReliablePacketReceived(): WebspeakEvent<String>{
+    public get onReliablePacketReceived(): WebspeakEvent<string>{
         return this._reliablePacketReceivedEvent;
     }
 
@@ -51,7 +51,7 @@ export class RTCConnectionWrapper {
         return this._unreliablePacketReceivedEvent;
     }
 
-    public setMicTrack(track: MediaStreamTrack): Promise<void>{
+    public setMicTrack(track: MediaStreamTrack | null): Promise<void>{
         return new Promise<void>((_resolve, reject) => {
             if(!this._micTranseiver){
                 reject(new Error("Mic transceiver is not yet ready"));
