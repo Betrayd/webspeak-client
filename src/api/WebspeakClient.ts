@@ -5,6 +5,7 @@ import {RTCConnectionWrapper} from "./rtc/connection/RTCConnectionWrapper.ts";
 import {AudioSource} from "./AudioSource.ts";
 import {ReliableMessages} from "./rtc/connection/ReliableMessages.ts";
 import {Vec3d} from "./Vec3d.ts";
+import {UnreliableMessages} from "./rtc/connection/UnreliableMessages.ts";
 
 export type DisconnectEvent = {
     readonly statusCode: number;
@@ -505,6 +506,19 @@ export class WebSpeakClient {
                 console.error("Failed to parse JSON from reliable connection channel", error);
             }
         });
+
+        //handle packets from the unreliable channel
+        thisCon.onUnreliablePacketReceived.addListener((bytes: Uint8Array) => {
+            const message: UnreliableMessages.UnreliableMessage | undefined = UnreliableMessages.parseBytes(bytes);
+            if(message instanceof UnreliableMessages.audioSourcePosition){
+                const audioSource = this.getAudioSource(message.id);
+                if(audioSource) {
+                    audioSource.updatePos(message.pos);
+                }
+            }else{
+                console.error("Unreliable packet unable to be parsed!", message);
+            }
+        })
 
         //add the received track if it's id matches our player id.
         //we don't actually care about removing it again after because if it's not receiving data anymore then it's just silent which is fine

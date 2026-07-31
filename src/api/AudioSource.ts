@@ -68,11 +68,22 @@ export class AudioSource{
 
     /**
      * <h1>INTERNAL</h1>
-     * sets this audio source's current pos
+     * sets this audio source's current pos without notifying listeners
      * @param pos
      */
     public setPos(pos: Vec3d){
         this._pos = pos;
+        this._positionUpdatedEvent.invoke(pos);
+    }
+
+    /**
+     * <h1>INTERNAL</h1>
+     * sets this audio source's current pos and notifies listeners
+     * @param pos
+     */
+    public updatePos(pos: Vec3d){
+        this._pos = pos;
+        this._positionUpdatedEvent.invoke(pos);
     }
 
     /**

@@ -2,9 +2,17 @@
 export class Vec3d {
     public static fromJson(json: Array<number>): Vec3d{
         if(json.length != 3){
-            throw new Error("Vec3d: json array length must be 3");
+            throw new RangeError("Vec3d: json array length must be 3");
         }
         return new Vec3d(json[0], json[1], json[2]);
+    }
+    public static fromUint8Array(bytes: Uint8Array, offset: number = 0, littleEndian = false): Vec3d{
+        if(offset + 24 > bytes.length){
+            throw new RangeError("Vec3d: Not enough bytes");
+        }
+
+        const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+        return new Vec3d(view.getFloat64(offset, littleEndian), view.getFloat64(offset + 8, littleEndian), view.getFloat64(offset + 16, littleEndian));
     }
 
     public readonly x: number;
