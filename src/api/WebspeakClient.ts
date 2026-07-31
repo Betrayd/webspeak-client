@@ -1,9 +1,9 @@
 import {WebspeakEvent} from "./event/Event";
 import type {WebspeakConfig} from "./WebspeakConfig.ts";
 import {RTCSignalingMessages} from "./rtc/signaling/RTCSignalingMessages.ts";
-import {RTCConnectionWrapper} from "./rtc/signaling/RTCConnectionWrapper.ts";
+import {RTCConnectionWrapper} from "./rtc/connection/RTCConnectionWrapper.ts";
 import {AudioSource} from "./AudioSource.ts";
-import {ReliableMessages} from "./rtc/ReliableMessages.ts";
+import {ReliableMessages} from "./rtc/connection/ReliableMessages.ts";
 import {Vec3d} from "./Vec3d.ts";
 
 export type DisconnectEvent = {
@@ -14,12 +14,12 @@ export type DisconnectEvent = {
 export type AudioProfileAddedEvent = {
     readonly uid: string;
     readonly name: string;
-    readonly id: number | null | undefined;
+    readonly id: string | null | undefined;
 }
 
 export type AudioProfileUpdateEvent = {
     readonly uid: string;
-    readonly id: number | null | undefined;
+    readonly id: string | null | undefined;
 }
 
 export type AudioProfileRemoveEvent = {
@@ -37,7 +37,7 @@ export class WebSpeakClient {
     private readonly _audioProfileRemovedEvent: WebspeakEvent.Invokable<AudioProfileRemoveEvent> = WebspeakEvent.create();
     private readonly _connectionResetEvent: WebspeakEvent.Invokable<void> = WebspeakEvent.create();
 
-    private readonly _audioSources:Map<number, AudioSource> = new Map();
+    private readonly _audioSources:Map<string, AudioSource> = new Map();
 
     private _isFatal: boolean = false;
     private _rtcConnection?: RTCConnectionWrapper;
@@ -46,19 +46,120 @@ export class WebSpeakClient {
         this._webSpeakConfig = webspeakConfig;
     }
 
+    /**
+     * Gets this webspeak client's webspeak config
+     */
     public get webSpeakConfig(): WebspeakConfig {
         return this._webSpeakConfig;
     }
 
+    /**
+     * Gets the URL from the passed webspeak config
+     */
     public get relayURL(): URL {
         return this._webSpeakConfig.relayURL;
     }
 
+    /**
+     * Gets the sessionId from the passed webspeak config
+     */
     public get sessionId(): string {
         return this._webSpeakConfig.sessionId;
     }
 
-    private async connectRTC(){
+    /**
+     * Called when an error is thrown that the client can not recover from.
+     * <p>Most likely the data being returned is an Error but since javascript
+     * is dumb you have to check that yourself</p>
+     */
+    public get onFatalError(): WebspeakEvent<unknown>{
+        return this._fatalErrorEvent;
+    }
+
+    /**
+     * Called when an audio source is added to the connection
+     */
+    public get onAudioSourceAdded(): WebspeakEvent<AudioSource>{
+        return this._audioSourceAddedEvent;
+    }
+
+    /**
+     * Called when an audio source is added from the connection
+     */
+    public get onAudioSourceRemoved(): WebspeakEvent<AudioSource>{
+        return this._audioSourceRemovedEvent;
+    }
+
+    /**
+     * Called whenever the server sends a new audio profile
+     * <p>uid is expected to be consistent across sessions and can be stored</p>
+     */
+    public get onAudioProfileAdded(): WebspeakEvent<AudioProfileAddedEvent>{
+        return this._audioProfileAddedEvent;
+    }
+
+    /**
+     * Called whenever the server updates an audio profile's audio source id
+     */
+    public get onAudioProfileUpdated(): WebspeakEvent<AudioProfileUpdateEvent>{
+        return this._audioProfileUpdatedEvent;
+    }
+
+    /**
+     * Called whenever the server requests to remove an audio profile
+     */
+    public get onAudioProfileRemoved(): WebspeakEvent<AudioProfileRemoveEvent>{
+        return this._audioProfileRemovedEvent;
+    }
+
+    /**
+     * Called when connection automatically reset. All previously created audio sources and audio profiles are no longer valid after this
+     */
+    public get onConnectionReset(): WebspeakEvent<void>{
+        return this._connectionResetEvent;
+    }
+
+    /**
+     * Get if this client is connected to a webspeak server.
+     */
+    public get isOpen(): boolean{
+        if(!this._rtcConnection || !this._rtcConnection.isOpen()){
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * Gets the audio source from the map using an audio source id
+     * @param id the id of the aduio source
+     */
+    public getAudioSource(id: string): AudioSource | undefined{
+        return this._audioSources.get(id);
+    }
+
+    /**
+     * Trys to set the audio track of the connection to the server
+     * @param track The track to set it to. ```null``` to clear
+     */
+    public async setMic(track: MediaStreamTrack | null){
+        if(this._rtcConnection !== undefined && this._rtcConnection.isOpen()){
+            return this._rtcConnection.setMicTrack(track);
+        }
+        throw new Error("RTC connection not open");
+    }
+
+    /**
+     * Starts the client and attempts to connect to the server
+     */
+    public start(): void {
+        this.connectRTC();
+    }
+
+    /**
+     * Starts a connection with retries and error handling, and sets up the RTC connection when finished using {@link WebspeakClient#connectSingle|connectSignle} and {@link WebspeakClient#rtcConnectionEstablished|rtcConnectionEstablished}
+     * @protected
+     */
+    protected async connectRTC(){
         for(let i = 0; i < this.webSpeakConfig.retryAttempts; i++){
             try{
                 await this.connectSingle();
@@ -82,7 +183,7 @@ export class WebSpeakClient {
      * <p>The boolean value is true if the connection succeeded and false otherwise</p>
      * @private
      */
-    private connectSingle(): Promise<void>{
+    protected connectSingle(): Promise<void>{
         return new Promise<void>((resolve, reject) => {
             const url = new URL(this.relayURL);
             url.searchParams.append("id", this.sessionId);
@@ -267,46 +368,10 @@ export class WebSpeakClient {
     }
 
     /**
-     * Stop the client.
-     *
-     * @return A promise that completes once the client has fully stopped.
+     * Simply called after the connection is established in {@link WebspeakClient#connectRTC|connectRTC}
+     * @protected
      */
-    /*close(): Promise<any>{
-        throw new Error("Not Yet Implemented");
-    }*/
-
-    /**
-     * ticks the client, in order to do events like send keep alives, etc.
-     */
-    /*tick(): void {
-        throw new Error("Not Yet Implemented");
-    }*/
-
-    /**
-     * Send a message to the server.
-     *
-     * @param message   Message payload.
-     * @return A promise that completes once the message has been sent.
-     */
-    /*sendMessage(message: String): Promise<any>{
-        throw new Error("Not Yet Implemented");
-    }
-
-    /**
-     * Called whenever a message is received from the server that is not handled automatically.
-     */
-    /*getOnMessageReceived(): WebspeakEvent<String> {
-        throw new Error("Not Yet Implemented");
-    }*/
-
-    /**
-     * Called when the internal connection has closed.
-     */
-    /*public get onClose(): WebspeakEvent<DisconnectEvent>{
-        throw new Error("Not Yet Implemented");
-    }*/
-
-    private rtcConnectionEstablished(): void{
+    protected rtcConnectionEstablished(): void{
         if(this._rtcConnection === undefined){
             this._isFatal = true;
             this._fatalErrorEvent.invoke(new Error("We've reached an unreachable state. Anything is possible. The limits were in our heads all along. Follow your dreams. https://xkcd.com/2200/"));
@@ -401,8 +466,33 @@ export class WebSpeakClient {
                         break;
                     }
                     case ReliableMessages.addAudioProfile.TYPE: {
-                        const audioProfile: ReliableMessages.addAudioProfile = new ReliableMessages.addAudioProfile(message.id, message.uid, message.name);
-
+                        const addProfilePacket: ReliableMessages.addAudioProfile = new ReliableMessages.addAudioProfile(message.id, message.uid, message.name);
+                        if(addProfilePacket) {
+                            this._audioProfileAddedEvent.invoke({
+                                uid: addProfilePacket.uid,
+                                name: addProfilePacket.name,
+                                id: addProfilePacket.id
+                            });
+                        }
+                        break;
+                    }
+                    case ReliableMessages.updateProfileSource.TYPE: {
+                        const updateProfilePacket: ReliableMessages.updateProfileSource = new ReliableMessages.updateProfileSource(message.id, message.name);
+                        if(updateProfilePacket) {
+                            this._audioProfileUpdatedEvent.invoke({
+                                uid: updateProfilePacket.uid,
+                                id: updateProfilePacket.id
+                            })
+                        }
+                        break;
+                    }
+                    case ReliableMessages.removeAudioProfile.TYPE: {
+                        const removeProfilePacket: ReliableMessages.removeAudioProfile = new ReliableMessages.removeAudioProfile(message.id);
+                        if(removeProfilePacket) {
+                            this._audioProfileRemovedEvent.invoke({
+                                uid: removeProfilePacket.uid
+                            })
+                        }
                         break;
                     }
                     default: {
@@ -415,85 +505,17 @@ export class WebSpeakClient {
                 console.error("Failed to parse JSON from reliable connection channel", error);
             }
         });
-    }
 
-    /**
-     * Gets the audio source from the map using an audio source id
-     * @param id the id of the aduio source
-     */
-    public getAudioSource(id: number): AudioSource | undefined{
-        return this._audioSources.get(id);
-    }
-
-    /**
-     * Trys to set the audio track of the connection to the server
-     * @param track The track to set it to. ```null``` to clear
-     */
-    public async setMic(track: MediaStreamTrack | null){
-        if(this._rtcConnection !== undefined && this._rtcConnection.isOpen()){
-            return this._rtcConnection.setMicTrack(track);
-        }
-        throw new Error("RTC connection not open");
-    }
-
-    /**
-     * Called when an error is thrown that the client can not recover from.
-     * <p>Most likely the data being returned is an Error but since javascript
-     * is dumb you have to check that yourself</p>
-     */
-    public get onFatalError(): WebspeakEvent<unknown>{
-        return this._fatalErrorEvent;
-    }
-
-    /**
-     * Called when an audio source is added to the connection
-     */
-    public get onAudioSourceAdded(): WebspeakEvent<AudioSource>{
-        return this._audioSourceAddedEvent;
-    }
-
-    /**
-     * Called when an audio source is added from the connection
-     */
-    public get onAudioSourceRemoved(): WebspeakEvent<AudioSource>{
-        return this._audioSourceRemovedEvent;
-    }
-
-    /**
-     * Called whenever the server sends a new audio profile
-     */
-    public get onAudioProfileAdded(): WebspeakEvent<AudioProfileAddedEvent>{
-        return this._audioProfileAddedEvent;
-    }
-
-    /**
-     * Called whenever the server updates an audio profile's audio source id
-     */
-    public get onAudioProfileUpdated(): WebspeakEvent<AudioProfileUpdateEvent>{
-        return this._audioProfileUpdatedEvent;
-    }
-
-    /**
-     * Called whenever the server requests to remove an audio profile
-     */
-    public get onAudioProfileRemoved(): WebspeakEvent<AudioProfileRemoveEvent>{
-        return this._audioProfileRemovedEvent;
-    }
-
-    /**
-     * Called when connection automatically reset. All previously created audio sources and audio profiles are no longer valid after this
-     */
-    public get onConnectionReset(): WebspeakEvent<void>{
-        return this._connectionResetEvent;
-    }
-
-    /**
-     * Get if this client is connected to a webspeak server.
-     */
-    public get isOpen(): boolean{
-        if(!this._rtcConnection || !this._rtcConnection.isOpen()){
-            return false;
-        }
-        return true;
+        //add the received track if it's id matches our player id.
+        //we don't actually care about removing it again after because if it's not receiving data anymore then it's just silent which is fine
+        thisCon.rtcConnection.addEventListener("track", (track: RTCTrackEvent) => {
+            const mediaTrack: MediaStreamTrack = track.track;
+            const linkedAudioSource: AudioSource | undefined = this._audioSources.get(mediaTrack.id);
+            if(linkedAudioSource) {
+                linkedAudioSource.setAudioTrack(mediaTrack);
+            }else{
+                console.error("Received media track for unknown audio source", mediaTrack.id);
+            }
+        });
     }
 }

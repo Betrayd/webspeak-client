@@ -1,4 +1,4 @@
-import type {ReliableMessages} from "../ReliableMessages.ts";
+import type {ReliableMessages} from "../connection/ReliableMessages.ts";
 
 export namespace RTCSignalingMessages {
     export interface RTCSignalingMessage extends ReliableMessages.ReliableMessage{

@@ -3,23 +3,24 @@ import {WebspeakEvent} from "./event/Event.ts";
 
 //TODO: This should use an interface and an impl instead of h1 tags that say internal but I'm lazy
 export class AudioSource{
-    private readonly _id: number;
+    private readonly _id: string;
 
     private readonly _positionUpdatedEvent: WebspeakEvent.Invokable<Vec3d> = WebspeakEvent.create();
     private readonly _configUpdatedEvent: WebspeakEvent.Invokable<AudioSource.Config> = WebspeakEvent.create();
+    private readonly _trackUpdatedEvent: WebspeakEvent.Invokable<MediaStreamTrack> = WebspeakEvent.create();
 
     private _config: AudioSource.Config = new AudioSource.Config();
     private _audioTrack?: MediaStreamTrack;
     private _pos?: Vec3d;
 
-    constructor(id: number){
+    constructor(id: string){
         this._id = id;
     }
 
     /**
      * Gets this audio sources id
      */
-    public get id(): number{
+    public get id(): string{
         return this._id;
     }
 
@@ -31,10 +32,17 @@ export class AudioSource{
     }
 
     /**
-     * Called when the audio sources config is updated by the server
+     * Called when the audio source's config is updated by the server
      */
     public get onConfigUpdated(): WebspeakEvent<AudioSource.Config> {
         return this._configUpdatedEvent
+    }
+
+    /**
+     * Called when the audio source's input stream track is updated by the server. This usually happens shortly after creation
+     */
+    public get onTrackUpdated(): WebspeakEvent<MediaStreamTrack> {
+        return this._trackUpdatedEvent;
     }
 
     /**
