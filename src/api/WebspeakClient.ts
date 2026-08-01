@@ -381,7 +381,12 @@ export class WebSpeakClient {
         const thisCon: RTCConnectionWrapper = this._rtcConnection;
         const onConnectionStateChange = () => {
             if (thisCon.rtcConnection.connectionState === "failed" || thisCon.rtcConnection.connectionState === "closed") {
-                this.connectRTC();
+                if(thisCon === this._rtcConnection) {
+                    this._audioSources.clear();
+                    this._connectionResetEvent.invoke();
+
+                    this.connectRTC();
+                }
             }
         };
         thisCon.rtcConnection.addEventListener("iceconnectionstatechange", onConnectionStateChange);
