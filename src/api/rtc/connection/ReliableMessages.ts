@@ -1,6 +1,17 @@
 export namespace ReliableMessages {
+    export function isReliableMessage(obj: unknown): obj is ReliableMessage{
+        if (obj !== null && typeof obj === "object"){
+            if("type" in obj){
+                if(typeof (obj as { type: unknown}).type === "string"){
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
     export interface ReliableMessage {
-        getType(): string;
+        get type(): string;
     }
 
     export class addAudioSource implements ReliableMessage{
@@ -12,7 +23,7 @@ export namespace ReliableMessages {
             }
         }
 
-        getType(): string {
+        get type(): string {
             return addAudioSource.TYPE;
         }
     }
@@ -22,7 +33,7 @@ export namespace ReliableMessages {
 
         constructor(public readonly id: string) {}
 
-        getType(): string {
+        get type(): string {
             return removeAudioSource.TYPE;
         }
     }
@@ -32,7 +43,7 @@ export namespace ReliableMessages {
 
         constructor(public readonly uid: string, public readonly name: string, public readonly id: string | null | undefined) {}
 
-        getType(): string {
+        get type(): string {
             return addAudioProfile.TYPE;
         }
     }
@@ -43,7 +54,7 @@ export namespace ReliableMessages {
         constructor(public readonly uid: string, public id: string | null | undefined) {
         }
 
-        getType(): string {
+        get type(): string {
             return updateProfileSource.TYPE;
         }
     }
@@ -54,7 +65,7 @@ export namespace ReliableMessages {
         constructor(public readonly uid: string) {
         }
 
-        getType(): string {
+        get type(): string {
             return removeAudioProfile.TYPE;
         }
     }
@@ -62,7 +73,7 @@ export namespace ReliableMessages {
     export function write<T extends ReliableMessage>(message: T): string {
         const obj = {
             ...message,
-            type: message.getType(),
+            type: message.type,
         };
 
         return JSON.stringify(obj);

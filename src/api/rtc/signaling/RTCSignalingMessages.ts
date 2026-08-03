@@ -1,4 +1,4 @@
-import type {ReliableMessages} from "../connection/ReliableMessages.ts";
+import {ReliableMessages} from "../connection/ReliableMessages.ts";
 
 export namespace RTCSignalingMessages {
     export interface RTCSignalingMessage extends ReliableMessages.ReliableMessage{
@@ -9,7 +9,7 @@ export namespace RTCSignalingMessages {
         public static readonly TYPE: string = "RTCiceCandidate";
         constructor(public readonly sdpMid: string | null, public readonly sdpMLineIndex: number | null, public readonly sdp: string) {}
 
-        getType(): string {
+        get type(): string {
             return iceCandidate.TYPE;
         }
     }
@@ -27,32 +27,26 @@ export namespace RTCSignalingMessages {
             }
             return 3;
         }
-
-        constructor(public readonly RTCSdpType: number, public readonly sdp?: string) {}
-
-        getRTCSdpType(): RTCSdpType{
-            if (this.RTCSdpType == 0) {
+        public static getRTCSdpType(obj: sessionDescription): RTCSdpType{
+            if (obj.RTCSdpType == 0) {
                 return "offer";
-            } else if (this.RTCSdpType == 1) {
+            } else if (obj.RTCSdpType == 1) {
                 return "pranswer";
-            } else if (this.RTCSdpType == 2) {
+            } else if (obj.RTCSdpType == 2) {
                 return "answer";
             } else {
                 return "rollback";
             }
         }
 
-        getType(): string {
-            return iceCandidate.TYPE;
+        constructor(public readonly RTCSdpType: number, public readonly sdp?: string) {}
+
+        get type(): string {
+            return sessionDescription.TYPE;
         }
     }
 
     export function write<T extends RTCSignalingMessage>(message: T): string {
-        const obj = {
-            ...message,
-            type: message.getType(),
-        };
-
-        return JSON.stringify(obj);
+        return ReliableMessages.write(message);
     }
 }

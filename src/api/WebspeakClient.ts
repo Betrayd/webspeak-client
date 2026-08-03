@@ -215,15 +215,20 @@ export class WebSpeakClient {
 
             relayConnection.onmessage = async (event: MessageEvent) => {
                 try {
-                    const message: any = JSON.parse(event.data);
+                    const message: unknown = JSON.parse(event.data);
                     console.log("received message from websocket relay", message);
 
+                    if(!ReliableMessages.isReliableMessage(message)) {
+                        throw new Error("Message was not of correct type");
+                    }
                     switch (message.type) {
                         case RTCSignalingMessages.iceCandidate.TYPE: {
+                            const iceMessage = message as RTCSignalingMessages.iceCandidate;
+                            console.log("iceMessage exists? ", iceMessage.sdp);
                             const candidateInfo: RTCIceCandidateInit = {
-                                candidate: message.spd,
-                                sdpMid: message.sdpMiddle,
-                                sdpMLineIndex: message.sdpAgainMLineIndex,
+                                candidate: iceMessage.sdp,
+                                sdpMid: iceMessage.sdpMid,
+                                sdpMLineIndex: iceMessage.sdpMLineIndex,
                             };
                             if (attemptedRtcCon === undefined || attemptedRtcCon.rtcConnection.remoteDescription === null) {
                                 pendingCandidates.push(candidateInfo);
@@ -237,7 +242,7 @@ export class WebSpeakClient {
                             break;
                         }
                         case RTCSignalingMessages.sessionDescription.TYPE: {
-                            const remoteDesc: RTCSignalingMessages.sessionDescription = new RTCSignalingMessages.sessionDescription(message.RTCSdpType, message.sdp);
+                            const remoteDesc: RTCSignalingMessages.sessionDescription = message as RTCSignalingMessages.sessionDescription;
                             //Create the RTC connection if we don't have one yet
                             if (attemptedRtcCon === undefined) {
                                 attemptedRtcCon = new RTCConnectionWrapper(this.webSpeakConfig.rtcConfiguration);
@@ -252,6 +257,7 @@ export class WebSpeakClient {
                                                 event.candidate.candidate
                                             )
                                             if (hasNotResolved) {
+                                                console.log("sending ice candidate over the relay", candidatePacket);
                                                 relayConnection.send(RTCSignalingMessages.write(candidatePacket));
                                             }
                                         } else {
@@ -264,7 +270,9 @@ export class WebSpeakClient {
                                 const onConnectionStateChange = () => {
                                     if (attemptedRtcCon?.rtcConnection.connectionState === "connected") {
                                         attemptedRtcCon?.rtcConnection.removeEventListener("connectionstatechange", onConnectionStateChange);
+                                        console.log("rtc connected...");
                                         if (hasNotResolved) {
+                                            console.log("rtc resolved");
                                             hasNotResolved = false;
                                             relayConnection.close();
                                             this._rtcConnection = attemptedRtcCon;
@@ -289,7 +297,7 @@ export class WebSpeakClient {
                             //set the remote description
                             try {
                                 await attemptedRtcCon?.rtcConnection.setRemoteDescription({
-                                    type: remoteDesc.getRTCSdpType(),
+                                    type: RTCSignalingMessages.sessionDescription.getRTCSdpType(remoteDesc),
                                     sdp: remoteDesc.sdp,
                                 });
 
@@ -314,6 +322,7 @@ export class WebSpeakClient {
                                                 RTCSignalingMessages.sessionDescription.parseRTCSdpType(answer.type), answer.sdp
                                             );
                                             if (hasNotResolved) {
+                                                console.log("sending answer over the relay", answerPacket);
                                                 relayConnection.send(RTCSignalingMessages.write(answerPacket));
                                             }
                                         } else {
@@ -352,7 +361,7 @@ export class WebSpeakClient {
                             break;
                         }
                         default: {
-                            console.error("Received unknown relay message type");
+                            console.error("Received unknown relay message type", message.type);
                         }
                     }
                 } catch(error: unknown) {
@@ -393,15 +402,19 @@ export class WebSpeakClient {
 
         thisCon.onReliablePacketReceived.addListener((event: string) => {
             try {
-                const message: any = JSON.parse(event);
+                const message: unknown = JSON.parse(event);
                 console.log("received message from websocket relay", message);
 
+                if(!ReliableMessages.isReliableMessage(message)) {
+                    throw new Error("Message was not of correct type");
+                }
                 switch (message.type) {
                     case RTCSignalingMessages.iceCandidate.TYPE: {
+                        const iceMessage = message as RTCSignalingMessages.iceCandidate;
                         const candidateInfo: RTCIceCandidateInit = {
-                            candidate: message.spd,
-                            sdpMid: message.sdpMiddle,
-                            sdpMLineIndex: message.sdpAgainMLineIndex,
+                            candidate: iceMessage.sdp,
+                            sdpMid: iceMessage.sdpMid,
+                            sdpMLineIndex: iceMessage.sdpMLineIndex,
                         };
                         (async () => {
                             try {
@@ -413,11 +426,11 @@ export class WebSpeakClient {
                         break;
                     }
                     case RTCSignalingMessages.sessionDescription.TYPE: {
-                        const remoteDesc: RTCSignalingMessages.sessionDescription = new RTCSignalingMessages.sessionDescription(message.RTCSdpType, message.sdp);
+                        const remoteDesc: RTCSignalingMessages.sessionDescription = message as RTCSignalingMessages.sessionDescription;
                         (async () => {
                             try {
                                 await thisCon.rtcConnection.setRemoteDescription({
-                                    type: remoteDesc.getRTCSdpType(),
+                                    type: RTCSignalingMessages.sessionDescription.getRTCSdpType(remoteDesc),
                                     sdp: remoteDesc.sdp,
                                 });
 
@@ -449,7 +462,7 @@ export class WebSpeakClient {
                         break;
                     }
                     case ReliableMessages.addAudioSource.TYPE: {
-                        const addAudioPacket: ReliableMessages.addAudioSource = new ReliableMessages.addAudioSource(message.id, message.config, message.pos);
+                        const addAudioPacket: ReliableMessages.addAudioSource = message as ReliableMessages.addAudioSource;
                         const audioSource: AudioSource = new AudioSource(addAudioPacket.id);
                         if (addAudioPacket.config) {
                             audioSource.setAudioSourceConfig(AudioSource.Config.fromJson(addAudioPacket.config));
@@ -463,7 +476,7 @@ export class WebSpeakClient {
                         break;
                     }
                     case ReliableMessages.removeAudioSource.TYPE: {
-                        const removeAudioPacket: ReliableMessages.removeAudioSource = new ReliableMessages.removeAudioSource(message.id);
+                        const removeAudioPacket: ReliableMessages.removeAudioSource = message as ReliableMessages.removeAudioSource;
                         const audioSource: AudioSource | undefined = this._audioSources.get(removeAudioPacket.id)
                         if (audioSource) {
                             this._audioSources.delete(removeAudioPacket.id);
@@ -472,7 +485,7 @@ export class WebSpeakClient {
                         break;
                     }
                     case ReliableMessages.addAudioProfile.TYPE: {
-                        const addProfilePacket: ReliableMessages.addAudioProfile = new ReliableMessages.addAudioProfile(message.id, message.uid, message.name);
+                        const addProfilePacket: ReliableMessages.addAudioProfile = message as ReliableMessages.addAudioProfile;
                         if(addProfilePacket) {
                             this._audioProfileAddedEvent.invoke({
                                 uid: addProfilePacket.uid,
@@ -483,7 +496,7 @@ export class WebSpeakClient {
                         break;
                     }
                     case ReliableMessages.updateProfileSource.TYPE: {
-                        const updateProfilePacket: ReliableMessages.updateProfileSource = new ReliableMessages.updateProfileSource(message.id, message.name);
+                        const updateProfilePacket: ReliableMessages.updateProfileSource = message as ReliableMessages.updateProfileSource;
                         if(updateProfilePacket) {
                             this._audioProfileUpdatedEvent.invoke({
                                 uid: updateProfilePacket.uid,
@@ -493,7 +506,7 @@ export class WebSpeakClient {
                         break;
                     }
                     case ReliableMessages.removeAudioProfile.TYPE: {
-                        const removeProfilePacket: ReliableMessages.removeAudioProfile = new ReliableMessages.removeAudioProfile(message.id);
+                        const removeProfilePacket: ReliableMessages.removeAudioProfile = message as ReliableMessages.removeAudioProfile;
                         if(removeProfilePacket) {
                             this._audioProfileRemovedEvent.invoke({
                                 uid: removeProfilePacket.uid
