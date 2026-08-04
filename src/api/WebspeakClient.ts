@@ -554,18 +554,7 @@ export class WebSpeakClient {
             const message: UnreliableMessages.UnreliableMessage | undefined = UnreliableMessages.parseBytes(bytes);
             let readJson: boolean = false;
             if(message !== undefined) {
-                if(message instanceof UnreliableMessages.audioSourcePosition) {
-                    const audioSource = this.getAudioSource(message.id);
-                    if (audioSource) {
-                        if(message.rot) {
-                            audioSource.updatePosRot(message.pos, message.rot);
-                        }else{
-                            audioSource.updatePos(message.pos);
-                        }
-                    }
-                    readJson = true;
-                }
-                else if(message instanceof UnreliableMessages.localPosition){
+                if(message instanceof UnreliableMessages.localPosition){
                     if(message.rot) {
                         this._localPositionUpdatedEvent.invoke({
                             pos: message.pos,
@@ -577,6 +566,17 @@ export class WebSpeakClient {
                             pos: message.pos,
                             rot: undefined
                         });
+                    }
+                    readJson = true;
+                }
+                else if(message instanceof UnreliableMessages.audioSourcePosition) {
+                    const audioSource = this.getAudioSource(message.id);
+                    if (audioSource) {
+                        if(message.rot) {
+                            audioSource.updatePosRot(message.pos, message.rot);
+                        }else{
+                            audioSource.updatePos(message.pos);
+                        }
                     }
                     readJson = true;
                 }
