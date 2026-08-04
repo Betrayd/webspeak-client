@@ -7,12 +7,12 @@ export class Vec3d {
         return new Vec3d(json[0], json[1], json[2]);
     }
     public static fromUint8Array(bytes: Uint8Array, offset: number = 0, littleEndian = false): Vec3d{
-        if(offset + 24 > bytes.length){
+        if(offset + 12 > bytes.length){
             throw new RangeError("Vec3d: Not enough bytes");
         }
 
         const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-        return new Vec3d(view.getFloat32(offset, littleEndian), view.getFloat32(offset + 8, littleEndian), view.getFloat32(offset + 16, littleEndian));
+        return new Vec3d(view.getFloat32(offset, littleEndian), view.getFloat32(offset + 4, littleEndian), view.getFloat32(offset + 8, littleEndian));
     }
 
     public readonly x: number;
