@@ -12,7 +12,7 @@ export class Vec3d {
         }
 
         const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-        return new Vec3d(view.getFloat64(offset, littleEndian), view.getFloat64(offset + 8, littleEndian), view.getFloat64(offset + 16, littleEndian));
+        return new Vec3d(view.getFloat32(offset, littleEndian), view.getFloat32(offset + 8, littleEndian), view.getFloat32(offset + 16, littleEndian));
     }
 
     public readonly x: number;

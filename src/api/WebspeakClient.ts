@@ -15,12 +15,12 @@ export type DisconnectEvent = {
 export type AudioProfileAddedEvent = {
     readonly uid: string;
     readonly name: string;
-    readonly id: string | null | undefined;
+    readonly id: number | null | undefined;
 }
 
 export type AudioProfileUpdateEvent = {
     readonly uid: string;
-    readonly id: string | null | undefined;
+    readonly id: number | null | undefined;
 }
 
 export type AudioProfileRemoveEvent = {
@@ -38,7 +38,7 @@ export class WebSpeakClient {
     private readonly _audioProfileRemovedEvent: WebspeakEvent.Invokable<AudioProfileRemoveEvent> = WebspeakEvent.create();
     private readonly _connectionResetEvent: WebspeakEvent.Invokable<void> = WebspeakEvent.create();
 
-    private readonly _audioSources:Map<string, AudioSource> = new Map();
+    private readonly _audioSources:Map<number, AudioSource> = new Map();
 
     private _isFatal: boolean = false;
     private _rtcConnection?: RTCConnectionWrapper;
@@ -134,7 +134,7 @@ export class WebSpeakClient {
      * Gets the audio source from the map using an audio source id
      * @param id the id of the aduio source
      */
-    public getAudioSource(id: string): AudioSource | undefined{
+    public getAudioSource(id: number): AudioSource | undefined{
         return this._audioSources.get(id);
     }
 
@@ -224,7 +224,6 @@ export class WebSpeakClient {
                     switch (message.type) {
                         case RTCSignalingMessages.iceCandidate.TYPE: {
                             const iceMessage = message as RTCSignalingMessages.iceCandidate;
-                            console.log("iceMessage exists? ", iceMessage.sdp);
                             const candidateInfo: RTCIceCandidateInit = {
                                 candidate: iceMessage.sdp,
                                 sdpMid: iceMessage.sdpMid,
@@ -528,12 +527,21 @@ export class WebSpeakClient {
         //handle packets from the unreliable channel
         thisCon.onUnreliablePacketReceived.addListener((bytes: Uint8Array) => {
             const message: UnreliableMessages.UnreliableMessage | undefined = UnreliableMessages.parseBytes(bytes);
-            if(message instanceof UnreliableMessages.audioSourcePosition){
-                const audioSource = this.getAudioSource(message.id);
-                if(audioSource) {
-                    audioSource.updatePos(message.pos);
+            let readJson: boolean = false;
+            if(message !== undefined) {
+                if(message instanceof UnreliableMessages.audioSourcePosition) {
+                    const audioSource = this.getAudioSource(message.id);
+                    if (audioSource) {
+                        if(!message.rot) {
+                            audioSource.updatePos(message.pos);
+                        }else{
+                            audioSource.updatePosRot(message.pos, message.rot);
+                        }
+                    }
+                    readJson = true;
                 }
-            }else{
+            }
+            if(!readJson) {
                 console.error("Unreliable packet unable to be parsed!", message);
             }
         })
@@ -542,7 +550,7 @@ export class WebSpeakClient {
         //we don't actually care about removing it again after because if it's not receiving data anymore then it's just silent which is fine
         thisCon.rtcConnection.addEventListener("track", (track: RTCTrackEvent) => {
             const mediaTrack: MediaStreamTrack = track.track;
-            const linkedAudioSource: AudioSource | undefined = this._audioSources.get(mediaTrack.id);
+            const linkedAudioSource: AudioSource | undefined = this._audioSources.get(parseInt(mediaTrack.id));
             if(linkedAudioSource) {
                 linkedAudioSource.setAudioTrack(mediaTrack);
             }else{

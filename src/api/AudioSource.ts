@@ -2,32 +2,38 @@ import type {Vec3d} from "./Vec3d.ts";
 import {WebspeakEvent} from "./event/Event.ts";
 
 //TODO: This should use an interface and an impl instead of h1 tags that say internal but I'm lazy
-export class AudioSource{
-    private readonly _id: string;
+export type UpdatePositionEvent = {
+    readonly pos: Vec3d;
+    readonly rot: Vec3d | undefined;
+}
 
-    private readonly _positionUpdatedEvent: WebspeakEvent.Invokable<Vec3d> = WebspeakEvent.create();
+export class AudioSource{
+    private readonly _id: number;
+
+    private readonly _positionUpdatedEvent: WebspeakEvent.Invokable<UpdatePositionEvent> = WebspeakEvent.create();
     private readonly _configUpdatedEvent: WebspeakEvent.Invokable<AudioSource.Config> = WebspeakEvent.create();
     private readonly _trackUpdatedEvent: WebspeakEvent.Invokable<MediaStreamTrack> = WebspeakEvent.create();
 
     private _config: AudioSource.Config = new AudioSource.Config();
     private _audioTrack?: MediaStreamTrack;
     private _pos?: Vec3d;
+    private _rot?: Vec3d;
 
-    constructor(id: string){
+    constructor(id: number){
         this._id = id;
     }
 
     /**
      * Gets this audio sources id
      */
-    public get id(): string{
+    public get id(): number{
         return this._id;
     }
 
     /**
      * Called whenever the server sends an update to the position
      */
-    public get onPositionUpdated(): WebspeakEvent<Vec3d> {
+    public get onPositionUpdated(): WebspeakEvent<UpdatePositionEvent> {
         return this._positionUpdatedEvent;
     }
 
@@ -53,6 +59,13 @@ export class AudioSource{
     }
 
     /**
+     * Gets the current rot of this audio source. This may have an initial value or be ```undefined``` if the initial rotation was not sent by the server
+     */
+    public get rot(): Vec3d | undefined{
+        return this._rot;
+    }
+
+    /**
      * gets the audio source config associated with this source
      */
     public get config(): AudioSource.Config{
@@ -73,7 +86,15 @@ export class AudioSource{
      */
     public setPos(pos: Vec3d){
         this._pos = pos;
-        this._positionUpdatedEvent.invoke(pos);
+    }
+
+    /**
+     * <h1>INTERNAL</h1>
+     * sets this audio source's current rot without notifying listeners
+     * @param rot
+     */
+    public setRot(rot: Vec3d){
+        this._rot = rot;
     }
 
     /**
@@ -83,7 +104,25 @@ export class AudioSource{
      */
     public updatePos(pos: Vec3d){
         this._pos = pos;
-        this._positionUpdatedEvent.invoke(pos);
+        this._positionUpdatedEvent.invoke({
+            pos: pos,
+            rot: undefined
+        });
+    }
+
+    /**
+     * <h1>INTERNAL</h1>
+     * sets this audio source's current pos and rotation and notifies listeners
+     * @param pos
+     * @param rot
+     */
+    public updatePosRot(pos: Vec3d, rot: Vec3d){
+        this._pos = pos;
+        this._rot = rot;
+        this._positionUpdatedEvent.invoke({
+            pos: pos,
+            rot: rot
+        });
     }
 
     /**
