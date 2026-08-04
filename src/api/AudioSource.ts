@@ -6,7 +6,6 @@ export type UpdatePositionEvent = {
     readonly pos: Vec3d;
     readonly rot: Vec3d | undefined;
 }
-
 export class AudioSource{
     private readonly _id: number;
 
@@ -31,7 +30,8 @@ export class AudioSource{
     }
 
     /**
-     * Called whenever the server sends an update to the position
+     * Called whenever the server sends an update to the position and rotation, rotation may be ```undefined```
+     * <p>The rotation is given as 3 radians for the x y and z rotation of the audio source</p>
      */
     public get onPositionUpdated(): WebspeakEvent<UpdatePositionEvent> {
         return this._positionUpdatedEvent;

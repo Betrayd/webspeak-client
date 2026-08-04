@@ -2,7 +2,7 @@ import {WebspeakEvent} from "./event/Event";
 import type {WebspeakConfig} from "./WebspeakConfig.ts";
 import {RTCSignalingMessages} from "./rtc/signaling/RTCSignalingMessages.ts";
 import {RTCConnectionWrapper} from "./rtc/connection/RTCConnectionWrapper.ts";
-import {AudioSource} from "./AudioSource.ts";
+import {AudioSource, type UpdatePositionEvent} from "./AudioSource.ts";
 import {ReliableMessages} from "./rtc/connection/ReliableMessages.ts";
 import {Vec3d} from "./Vec3d.ts";
 import {UnreliableMessages} from "./rtc/connection/UnreliableMessages.ts";
@@ -31,6 +31,7 @@ export class WebSpeakClient {
     private readonly _webSpeakConfig: WebspeakConfig;
 
     private readonly _fatalErrorEvent: WebspeakEvent.Invokable<unknown> = WebspeakEvent.create();
+    private readonly _localPositionUpdatedEvent: WebspeakEvent.Invokable<UpdatePositionEvent> = WebspeakEvent.create();
     private readonly _audioSourceAddedEvent: WebspeakEvent.Invokable<AudioSource> = WebspeakEvent.create();
     private readonly _audioSourceRemovedEvent: WebspeakEvent.Invokable<AudioSource> = WebspeakEvent.create();
     private readonly _audioProfileAddedEvent: WebspeakEvent.Invokable<AudioProfileAddedEvent> = WebspeakEvent.create();
@@ -75,6 +76,14 @@ export class WebSpeakClient {
      */
     public get onFatalError(): WebspeakEvent<unknown>{
         return this._fatalErrorEvent;
+    }
+
+    /**
+     * Called whenever the server sends an updated local position and rotation. rotation may be ```undefined```
+     * <p>The rotation is given as 3 radians for the x y and z rotation of the audio source</p>
+     */
+    public get onLocalPositionUpdated(): WebspeakEvent<UpdatePositionEvent> {
+        return this._localPositionUpdatedEvent;
     }
 
     /**
@@ -460,6 +469,21 @@ export class WebSpeakClient {
                         })();
                         break;
                     }
+                    case ReliableMessages.localPos.TYPE: {
+                        const localPos: ReliableMessages.localPos = message as ReliableMessages.localPos;
+                        if(localPos.rot){
+                            this._localPositionUpdatedEvent.invoke({
+                                pos: localPos.pos,
+                                rot: localPos.rot
+                            })
+                        }else{
+                            this._localPositionUpdatedEvent.invoke({
+                                pos: localPos.pos,
+                                rot: undefined
+                            })
+                        }
+                        break;
+                    }
                     case ReliableMessages.addAudioSource.TYPE: {
                         const addAudioPacket: ReliableMessages.addAudioSource = message as ReliableMessages.addAudioSource;
                         const audioSource: AudioSource = new AudioSource(addAudioPacket.id);
@@ -532,11 +556,26 @@ export class WebSpeakClient {
                 if(message instanceof UnreliableMessages.audioSourcePosition) {
                     const audioSource = this.getAudioSource(message.id);
                     if (audioSource) {
-                        if(!message.rot) {
-                            audioSource.updatePos(message.pos);
-                        }else{
+                        if(message.rot) {
                             audioSource.updatePosRot(message.pos, message.rot);
+                        }else{
+                            audioSource.updatePos(message.pos);
                         }
+                    }
+                    readJson = true;
+                }
+                else if(message instanceof UnreliableMessages.localPosition){
+                    if(message.rot) {
+                        this._localPositionUpdatedEvent.invoke({
+                            pos: message.pos,
+                            rot: message.rot
+                        });
+                    }
+                    else{
+                        this._localPositionUpdatedEvent.invoke({
+                            pos: message.pos,
+                            rot: undefined
+                        });
                     }
                     readJson = true;
                 }

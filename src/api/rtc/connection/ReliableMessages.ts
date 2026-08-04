@@ -1,3 +1,5 @@
+import type {Vec3d} from "../../Vec3d.ts";
+
 export namespace ReliableMessages {
     export function isReliableMessage(obj: unknown): obj is ReliableMessage{
         if (obj !== null && typeof obj === "object"){
@@ -12,6 +14,16 @@ export namespace ReliableMessages {
 
     export interface ReliableMessage {
         get type(): string;
+    }
+
+    export class localPos implements ReliableMessage {
+        public static readonly TYPE: string = "localPos"
+
+        constructor(public readonly pos: Vec3d, public readonly rot: Vec3d | null | undefined) {}
+
+        get type(): string {
+            return localPos.TYPE;
+        }
     }
 
     export class addAudioSource implements ReliableMessage{
