@@ -471,14 +471,15 @@ export class WebSpeakClient {
                     }
                     case ReliableMessages.localPos.TYPE: {
                         const localPos: ReliableMessages.localPos = message as ReliableMessages.localPos;
+                        const pos: Vec3d = Vec3d.fromJson(localPos.pos);
                         if(localPos.rot){
                             this._localPositionUpdatedEvent.invoke({
-                                pos: localPos.pos,
-                                rot: localPos.rot
+                                pos: pos,
+                                rot: Vec3d.fromJson(localPos.rot)
                             })
                         }else{
                             this._localPositionUpdatedEvent.invoke({
-                                pos: localPos.pos,
+                                pos: pos,
                                 rot: undefined
                             })
                         }
