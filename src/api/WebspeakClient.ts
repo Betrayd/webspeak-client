@@ -31,6 +31,7 @@ export class WebSpeakClient {
     private readonly _webSpeakConfig: WebspeakConfig;
 
     private readonly _fatalErrorEvent: WebspeakEvent.Invokable<unknown> = WebspeakEvent.create();
+    private readonly _rtcConnectedEvent: WebspeakEvent.Invokable<void> = WebspeakEvent.create();
     private readonly _localPositionUpdatedEvent: WebspeakEvent.Invokable<UpdatePositionEvent> = WebspeakEvent.create();
     private readonly _audioSourceAddedEvent: WebspeakEvent.Invokable<AudioSource> = WebspeakEvent.create();
     private readonly _audioSourceRemovedEvent: WebspeakEvent.Invokable<AudioSource> = WebspeakEvent.create();
@@ -76,6 +77,13 @@ export class WebSpeakClient {
      */
     public get onFatalError(): WebspeakEvent<unknown>{
         return this._fatalErrorEvent;
+    }
+
+    /**
+     * Called whenever webRTC connects. This may be called again automatically after a connection reset event is called.
+     */
+    public get onConnected(): WebspeakEvent<void>{
+        return this._rtcConnectedEvent;
     }
 
     /**
@@ -597,5 +605,7 @@ export class WebSpeakClient {
                 console.error("Received media track for unknown audio source", mediaTrack.id);
             }
         });
+
+        this._rtcConnectedEvent.invoke();
     }
 }
