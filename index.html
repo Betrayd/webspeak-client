@@ -1,13 +1,286 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>webspeak-client</title>
-  </head>
-  <body>
-    <div id="app"></div>
-    <script type="module" src="/src/main.ts"></script>
-  </body>
+<link rel="stylesheet" href="src/style.css">
+<body>
+<div id="landingScreen">
+    <div class="background">
+        <div class="brand">
+            <span class="brand-name">WEBSPEAK</span>
+        </div>
+
+        <div class="landing-card">
+
+            <label class="landing-label" for="sessionId">
+                Session ID
+            </label>
+
+            <input
+                    id="sessionId"
+                    class="landing-input"
+                    type="text"
+                    placeholder="Enter a session identifier"
+                    autocomplete="off"
+            >
+
+            <button
+                    id="enterAppBtn"
+                    class="landing-btn"
+                    disabled>
+                Join Session
+            </button>
+
+        </div>
+    </div>
+
+
+</div>
+<div id="app" class="hidden">
+    <div class="background">
+        <div class="brand">
+            <span class="brand-name">WEBSPEAK</span>
+        </div>
+
+        <div class="backgroundBox">
+            <div class="settings-drawer" id="settingsDrawer">
+
+                <div class="drawer-header">
+                    <span class="drawer-title">Settings</span>
+
+                    <button class="drawer-close" id="closeDrawerBtn">
+                        X
+                    </button>
+                </div>
+
+
+                <div class="drawer-body">
+
+                    <div class="setting-group">
+
+            <span class="setting-label">
+                Input device
+            </span>
+
+                        <select class="field">
+                            <option>Microphone 1</option>
+                        </select>
+
+
+                        <div class="setting-row">
+                <span class="setting-desc">
+                    Input volume
+                </span>
+                        </div>
+
+                        <div class="range-row">
+                            <div class="settings-range-wrap">
+                                <div class="settings-range-bg"></div>
+
+                                <input
+                                        type="range"
+                                        class="settings-range"
+                                        id="inputGainRange"
+                                        min="0"
+                                        max="200"
+                                        value="100"
+                                >
+                            </div>
+                            <span class="range-value">100%</span>
+                        </div>
+
+                    </div>
+
+
+
+                    <div class="setting-group">
+
+            <span class="setting-label">
+                Output device
+            </span>
+
+                        <select class="field">
+                            <option>Speaker 1</option>
+                        </select>
+
+
+                        <div class="setting-row">
+                <span class="setting-desc">
+                    Master volume
+                </span>
+                        </div>
+
+                        <div class="range-row">
+                            <div class="settings-range-wrap">
+                                <div class="settings-range-bg"></div>
+
+                                <input
+                                        type="range"
+                                        class="settings-range"
+                                        id="volumeGainRange"
+                                        min="0"
+                                        max="200"
+                                        value="100"
+                                >
+                            </div>
+                            <span class="range-value">100%</span>
+                        </div>
+
+                    </div>
+
+
+
+                    <div class="setting-group">
+
+                        <div class="setting-row">
+                            <div>
+                    <span class="setting-label">
+                        Noise suppression
+                    </span>
+
+                                <div class="setting-desc">
+                                    Filters steady background noise.
+                                </div>
+                            </div>
+
+                            <button class="toggle on"></button>
+                        </div>
+
+
+                        <div class="setting-row">
+                            <div>
+                    <span class="setting-label">
+                        Echo cancellation
+                    </span>
+
+                                <div class="setting-desc">
+                                    Prevents microphone feedback.
+                                </div>
+                            </div>
+
+                            <button class="toggle on"></button>
+                        </div>
+
+
+                        <div class="setting-row">
+                            <div>
+                    <span class="setting-label">
+                        Automatic gain control
+                    </span>
+
+                                <div class="setting-desc">
+                                    Keeps your microphone volume consistent.
+                                </div>
+                            </div>
+
+                            <button class="toggle on"></button>
+                        </div>
+
+                    </div>
+
+
+
+                    <div class="setting-group">
+
+                        <div class="setting-row">
+
+                            <div>
+                    <span class="setting-label">
+                        Reduce motion
+                    </span>
+
+                                <div class="setting-desc">
+                                    Disables speaking animations.
+                                </div>
+                            </div>
+
+                            <button class="toggle"></button>
+
+                        </div>
+
+                    </div>
+
+
+
+                    <div class="setting-group version-info">
+
+                        <div class="setting-desc">
+                            Webspeak v1.0.0
+                        </div>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+            <div class="top-bar">
+                <div class="con-status">
+                    <span class="con-status-icon"></span>
+                    <span class="con-status-text">Connected</span>
+                </div>
+
+                <button class="settings-btn">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
+                         stroke="currentColor" stroke-width="2"
+                         stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="3"></circle>
+                        <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 0 1-4 0v-.09a1.7 1.7 0 0 0-1-1.55 1.7 1.7 0 0 0-1.88.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.55-1H3a2 2 0 0 1 0-4h.09a1.7 1.7 0 0 0 1.55-1 1.7 1.7 0 0 0-.34-1.88l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.88.34h.01a1.7 1.7 0 0 0 1-1.55V3a2 2 0 0 1 4 0v.09a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.88-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.88v.01a1.7 1.7 0 0 0 1.55 1H21a2 2 0 0 1 0 4h-.09a1.7 1.7 0 0 0-1.51 1z"></path>
+                    </svg>
+                    <span>Settings</span>
+                </button>
+            </div>
+
+            <div class="section-divider"></div>
+
+            <div class="mic-section">
+                <div class="mic-meter-block">
+                    <svg class="mic-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+                        <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                        <line x1="12" y1="19" x2="12" y2="23"></line>
+                        <line x1="8" y1="23" x2="16" y2="23"></line>
+                    </svg>
+                    <div class="meter-track">
+                        <!-- Changed style width to 50% just so you can see it working right now -->
+                        <div class="meter-fill" id="micMeterFill" style="width: 50%;"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="audio-controls">
+                <button class="audio-btn" id="mute-btn">
+                    <svg class="audio-icon" width="18" height="18" viewBox="0 0 24 24"
+                         fill="none" stroke="currentColor" stroke-width="2"
+                         stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+                        <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                        <line x1="12" y1="19" x2="12" y2="23"></line>
+                        <line x1="8" y1="23" x2="16" y2="23"></line>
+                    </svg>
+                    <span>Mute</span>
+                </button>
+
+                <button class="audio-btn" id="deafen-btn">
+                    <svg class="audio-icon" width="18" height="18" viewBox="0 0 24 24"
+                         fill="none" stroke="currentColor" stroke-width="2"
+                         stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M3 18v-6a9 9 0 0 1 18 0v6"></path>
+                        <path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"></path>
+                    </svg>
+                    <span>Deafen</span>
+                </button>
+            </div>
+
+            <div class="players-section">
+
+                <div class="section-divider"></div>
+
+                <h2 class="section-title">Players</h2>
+
+                <div class="players-list" id = "player-list">
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+<script type="module" src="./src/main.ts"></script>
+</body>
 </html>
