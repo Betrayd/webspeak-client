@@ -43,6 +43,7 @@ export class WebSpeakClient {
     private readonly _audioProfileRemovedEvent: WebspeakEvent.Invokable<AudioProfileRemoveEvent> = WebspeakEvent.create();
     private readonly _connectionResetEvent: WebspeakEvent.Invokable<void> = WebspeakEvent.create();
 
+    private readonly _trackInfos: Map<string, number> = new Map();
     private readonly _audioSources:Map<number, AudioSource> = new Map();
 
     private _isFatal: boolean = false;
@@ -495,6 +496,11 @@ export class WebSpeakClient {
                         })();
                         break;
                     }
+                    case ReliableMessages.trackInfo.TYPE: {
+                        const trackInfo: ReliableMessages.trackInfo = message as ReliableMessages.trackInfo;
+                        this._trackInfos.set(trackInfo.mid, trackInfo.owner);
+                        break;
+                    }
                     case ReliableMessages.localPos.TYPE: {
                         const localPos: ReliableMessages.localPos = message as ReliableMessages.localPos;
                         const pos: Vec3d = Vec3d.fromJson(localPos.pos);
@@ -615,13 +621,29 @@ export class WebSpeakClient {
         //add the received track if it's id matches our player id.
         //we don't actually care about removing it again after because if it's not receiving data anymore then it's just silent which is fine
         thisCon.rtcConnection.addEventListener("track", (track: RTCTrackEvent) => {
-            const mediaTrack: MediaStreamTrack = track.track;
-            const linkedAudioSource: AudioSource | undefined = this._audioSources.get(parseInt(mediaTrack.id));
-            if(linkedAudioSource) {
-                linkedAudioSource.setAudioTrack(mediaTrack);
+
+            const mid: string | null = track.transceiver.mid;
+            if(mid !== null){
+                const ownerId = this._trackInfos.get(mid);
+
+                if(ownerId !== undefined){
+                    const mediaTrack: MediaStreamTrack = track.track;
+                    const linkedAudioSource: AudioSource | undefined = this._audioSources.get(ownerId);
+                    if(linkedAudioSource) {
+                        linkedAudioSource.setAudioTrack(mediaTrack);
+                    }else{
+                        console.error("Received media track for unknown audio source with owner id:", ownerId);
+                    }
+                }else{
+                    console.error("Received media track for unknown audio source. No owner id found", mid);
+                }
+
             }else{
-                console.error("Received media track for unknown audio source", mediaTrack.id);
+                console.error("Received media track without mid");
             }
+
+
+
         });
 
         thisCon.onReady.addListener(() => {

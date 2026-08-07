@@ -14,6 +14,16 @@ export namespace ReliableMessages {
         get type(): string;
     }
 
+    export class trackInfo implements ReliableMessage {
+        public static readonly TYPE: string = "trackInfo";
+
+        constructor(public readonly owner: number, public readonly mid: string) {}
+
+        get type(): string {
+            return trackInfo.TYPE;
+        }
+    }
+
     export class localPos implements ReliableMessage {
         public static readonly TYPE: string = "localPos"
 
