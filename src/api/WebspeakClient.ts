@@ -624,13 +624,13 @@ export class WebSpeakClient {
 
             const mid: string | null = track.transceiver.mid;
             if(mid !== null){
-                const ownerId = this._trackInfos.get(mid);
+                const ownerId: number | undefined = this._trackInfos.get(mid);
 
                 if(ownerId !== undefined){
-                    const mediaTrack: MediaStreamTrack = track.track;
                     const linkedAudioSource: AudioSource | undefined = this._audioSources.get(ownerId);
-                    if(linkedAudioSource) {
-                        linkedAudioSource.setAudioTrack(mediaTrack);
+
+                    if(linkedAudioSource !== undefined) {
+                        linkedAudioSource.setAudioTrack(track.track);
                     }else{
                         console.error("Received media track for unknown audio source with owner id:", ownerId);
                     }
