@@ -216,14 +216,7 @@ function start(relayURL: URL, sessionId: string): void{
     thisClient.onReady.addListener(() => {
         if(micInput.micStream !== undefined){
             awaitMic = false;
-            console.log("setting mic")
-            thisClient.setMic(micInput.micStream.getAudioTracks()[0]).then(
-                () => {
-
-                },
-                (reason) => {
-                    console.error("failed to set mic", reason);
-                });
+            setMicSource(micInput.micStream);
         }else{
             awaitMic = true;
         }
@@ -277,6 +270,16 @@ function start(relayURL: URL, sessionId: string): void{
     });
 
     thisClient.start();
+}
+
+function setMicSource(stream: MediaStream){
+    client?.setMic(stream.getAudioTracks()[0]).then(
+        () => {
+            console.log("Set mic stream to current microphone");
+        },
+        (reason) => {
+            console.error("failed to set mic", reason);
+        });
 }
 
 /**
@@ -389,14 +392,7 @@ enterButton.addEventListener("click", async () => {
                     const stream = await micInput.requestMic(echoCancelButton?.classList.contains("on"), noiseSuppressButton?.classList.contains("on"), autoGainButton?.classList.contains("on"));
                     if(awaitMic){
                         awaitMic = false;
-                        console.log("setting mic")
-                        client?.setMic(stream.getAudioTracks()[0]).then(
-                            () => {
-
-                            },
-                            (reason) => {
-                                console.error("failed to set mic", reason);
-                            });
+                        setMicSource(stream);
                     }
                 }
                 catch(e) {

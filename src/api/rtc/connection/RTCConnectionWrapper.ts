@@ -70,7 +70,7 @@ export class RTCConnectionWrapper {
                 this._micTransceiver = this._rtcConnection.getTransceivers().find(t => t.receiver.track.kind === "audio");
 
                 this._micTransceiver!.direction = "sendonly";
-                console.log(this._micTransceiver);
+                this.tryReady();
             }, ()=>{
 
             }
