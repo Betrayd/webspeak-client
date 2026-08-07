@@ -2,18 +2,27 @@ import {WebspeakEvent} from "../../event/Event.ts";
 
 export class RTCConnectionWrapper {
     private readonly _rtcConnection: RTCPeerConnection;
+    private readonly _readyEvent: WebspeakEvent.Invokable<void> = WebspeakEvent.create();
     private readonly _reliablePacketReceivedEvent: WebspeakEvent.Invokable<string> = WebspeakEvent.create();
     private readonly _unreliablePacketReceivedEvent: WebspeakEvent.Invokable<Uint8Array> = WebspeakEvent.create();
 
     private _reliableChannel?: RTCDataChannel;
     private _unreliableChannel?: RTCDataChannel;
-    private _micTranseiver?: RTCRtpTransceiver;
+    private _micTransceiver?: RTCRtpTransceiver;
+
+    private sendReady: boolean = true;
 
     constructor(config: RTCConfiguration) {
         this._rtcConnection = new RTCPeerConnection(config);
 
-        this._micTranseiver = this._rtcConnection.addTransceiver('audio', { direction: 'sendonly' });
-
+         this._rtcConnection.addTransceiver('audio', { direction: 'sendonly' });
+        this.rtcConnection.addEventListener("track", (track: RTCTrackEvent) => {
+            const mediaTransceiver: RTCRtpTransceiver = track.transceiver;
+            if(mediaTransceiver.direction === "sendonly"){
+                this._micTransceiver = mediaTransceiver;
+                this.tryReady();
+            }
+        })
         //ideally this should be pre-negotiated, but I'm scared of setting the session description
         this._rtcConnection.ondatachannel = (event: RTCDataChannelEvent) => {
             const receiveChannel: RTCDataChannel = event.channel;
@@ -26,6 +35,10 @@ export class RTCConnectionWrapper {
                             this._reliablePacketReceivedEvent.invoke(event.data);
                         }
                     }
+                    this._reliableChannel.onopen = () => {
+                        this.tryReady();
+                    };
+                    this.tryReady();
                     break;
                 case "unreliable":
                     this._unreliableChannel = receiveChannel;
@@ -34,6 +47,10 @@ export class RTCConnectionWrapper {
                             this._unreliablePacketReceivedEvent.invoke(new Uint8Array(event.data));
                         }
                     }
+                    this._unreliableChannel.onopen = () => {
+                        this.tryReady();
+                    };
+                    this.tryReady();
                     break;
             }
         }
@@ -41,6 +58,10 @@ export class RTCConnectionWrapper {
 
     public get rtcConnection(): RTCPeerConnection {
         return this._rtcConnection;
+    }
+
+    public get onReady(): WebspeakEvent<void> {
+        return this._readyEvent;
     }
 
     public get onReliablePacketReceived(): WebspeakEvent<string>{
@@ -52,12 +73,10 @@ export class RTCConnectionWrapper {
     }
 
     public setMicTrack(track: MediaStreamTrack | null): Promise<void>{
-        return new Promise<void>((_resolve, reject) => {
-            if(!this._micTranseiver){
-                reject(new Error("Mic transceiver is not yet ready"));
-            }
-            return this._micTranseiver?.sender.replaceTrack(track);
-        });
+        if (!this._micTransceiver) {
+            return Promise.reject(new Error("Mic transceiver is not yet ready"));
+        }
+        return this._micTransceiver.sender.replaceTrack(track);
     }
 
     public sendReliablePacket(message: string): void{
@@ -69,10 +88,19 @@ export class RTCConnectionWrapper {
     }
 
     public isOpen(): boolean{
-        if(!this._reliableChannel || !this._unreliableChannel || this._reliableChannel.readyState !== "open" || this._unreliableChannel.readyState !== "open"){
+        if(!this._micTransceiver || !this._reliableChannel || !this._unreliableChannel || this._reliableChannel.readyState !== "open" || this._unreliableChannel.readyState !== "open"){
             return false;
         }
 
         return true;
+    }
+
+    private tryReady(): void{
+        if(this.sendReady){
+            if(this.isOpen()){
+                this.sendReady = false;
+                this._readyEvent.invoke();
+            }
+        }
     }
 }

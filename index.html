@@ -141,7 +141,7 @@
                                 </div>
                             </div>
 
-                            <button class="toggle on"></button>
+                            <button class="toggle on" id = "noise-suppress"></button>
                         </div>
 
 
@@ -156,7 +156,7 @@
                                 </div>
                             </div>
 
-                            <button class="toggle on"></button>
+                            <button class="toggle on" id = "echo-cancel"></button>
                         </div>
 
 
@@ -171,7 +171,7 @@
                                 </div>
                             </div>
 
-                            <button class="toggle on"></button>
+                            <button class="toggle on" id = "auto-gain"></button>
                         </div>
 
                     </div>
@@ -214,8 +214,8 @@
 
             <div class="top-bar">
                 <div class="con-status">
-                    <span class="con-status-icon"></span>
-                    <span class="con-status-text">Connected</span>
+                    <span class="con-status-icon inactive" id="con-icon"></span>
+                    <span class="con-status-text" id="con-text">Inactive</span>
                 </div>
 
                 <button class="settings-btn">
@@ -241,7 +241,7 @@
                     </svg>
                     <div class="meter-track">
                         <!-- Changed style width to 50% just so you can see it working right now -->
-                        <div class="meter-fill" id="micMeterFill" style="width: 50%;"></div>
+                        <div class="meter-fill" id="micMeterFill" style="clip-path: inset(0 100% 0 0);"></div>
                     </div>
                 </div>
             </div>
@@ -281,6 +281,31 @@
         </div>
     </div>
 </div>
+
+<div id="errorOverlay" class="error-overlay hidden">
+    <div class="error-dialog">
+
+        <div class="error-header">
+            <span class="error-title">Error</span>
+
+            <button id="errorCloseBtn" class="error-close">
+                X
+            </button>
+        </div>
+
+        <div id="errorMessage" class="error-message">
+            Unknown error.
+        </div>
+
+        <div class="error-actions">
+            <button id="errorOkBtn" class="landing-btn">
+                OK
+            </button>
+        </div>
+
+    </div>
+</div>
+
 <script type="module" src="./src/main.ts"></script>
 </body>
 </html>

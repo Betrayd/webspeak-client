@@ -32,6 +32,8 @@ export class WebSpeakClient {
 
     private readonly _fatalErrorEvent: WebspeakEvent.Invokable<unknown> = WebspeakEvent.create();
     private readonly _rtcConnectedEvent: WebspeakEvent.Invokable<void> = WebspeakEvent.create();
+    private readonly _rtcConnectingEvent: WebspeakEvent.Invokable<void> = WebspeakEvent.create();
+    private readonly _rtcReadyEvent: WebspeakEvent.Invokable<void> = WebspeakEvent.create();
     private readonly _localPositionUpdatedEvent: WebspeakEvent.Invokable<UpdatePositionEvent> = WebspeakEvent.create();
     private readonly _audioSourceAddedEvent: WebspeakEvent.Invokable<AudioSource> = WebspeakEvent.create();
     private readonly _audioSourceRemovedEvent: WebspeakEvent.Invokable<AudioSource> = WebspeakEvent.create();
@@ -84,6 +86,20 @@ export class WebSpeakClient {
      */
     public get onConnected(): WebspeakEvent<void>{
         return this._rtcConnectedEvent;
+    }
+
+    /**
+     * Called whenever webRTC attempts to connect. This is called after start, but may also be called automatically whenever we attempt to reconnect
+     */
+    public get onConnecting(): WebspeakEvent<void>{
+        return this._rtcConnectingEvent;
+    }
+
+    /**
+     * Called when the rtc connection guaranteed has all channels and can send and receive data. Things like media input tracks are now able to be set.
+     */
+    public get onReady(): WebspeakEvent<void>{
+        return this._rtcReadyEvent;
     }
 
     /**
@@ -180,6 +196,7 @@ export class WebSpeakClient {
     protected async connectRTC(){
         for(let i = 0; i < this.webSpeakConfig.retryAttempts; i++){
             try{
+                this._rtcConnectingEvent.invoke();
                 await this.connectSingle();
                 this.rtcConnectionEstablished();
                 return;

@@ -83,8 +83,93 @@ class AudioProfile{
 }
 
 class AudioSourceWrapper{
-    constructor(public readonly source: AudioSource) {
+    private _panner: PannerNode;
+    constructor(ctx: AudioContext, public readonly source: AudioSource) {
+        const panner = new PannerNode(ctx, {
 
+        });
+    }
+}
+
+class MicContainer{
+    private _muted: boolean = false;
+    private _gain: number = 1.0;
+
+    public ctx?: AudioContext;
+    private _micStream?: MediaStream;
+    private _micSource?: MediaStreamAudioSourceNode;
+    private _micGain?: GainNode;
+    private _analyser?: AnalyserNode;
+    private _analyserData?: Uint8Array<ArrayBuffer>;
+
+    public get muted(): boolean {
+        return this._muted;
+    }
+
+    public set muted(muted: boolean) {
+        this._muted = muted;
+        this.updateMuteStateTracks();
+    }
+
+    public get micStream(){
+        return this._micStream;
+    }
+
+    public get gain(): number{
+        return this._gain;
+    }
+
+    public set gain(gain: number){
+        this._gain = gain;
+        if(this._micGain){
+            this._micGain.gain.value = this._gain;
+        }
+    }
+
+    public async init(){
+        this.ctx = new window.AudioContext();
+    }
+
+    public async requestMic(cancelEcho: boolean, noiseSuppress: boolean, autoGain: boolean):Promise<MediaStream> {
+        if(this.ctx === undefined){
+            throw new Error("ctx not set");
+        }
+        const constraints = {
+            audio: {
+                echoCancellation: cancelEcho,
+                noiseSuppression: noiseSuppress,
+                autoGainControl: autoGain,
+            },
+        };
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        this._micStream = stream;
+        if (this.ctx.state === "suspended") await this.ctx.resume();
+        if (this._micSource) this._micSource.disconnect();
+        this._micSource = this.ctx.createMediaStreamSource(stream);
+        this._micGain = this.ctx.createGain();
+        this._micGain.gain.value = this._gain;
+        this._analyser = this.ctx.createAnalyser();
+        this._analyser.fftSize = 256;
+        this._analyserData = new Uint8Array(this._analyser.frequencyBinCount);
+        this._micSource.connect(this._micGain).connect(this._analyser);
+
+        this.updateMuteStateTracks();
+
+        return stream;
+    }
+
+    public readMicLevel(): number {
+        if (!this._analyser || !this._analyserData) return 0;
+        this._analyser.getByteFrequencyData(this._analyserData);
+        let sum = 0;
+        for (let i = 0; i < this._analyserData.length; i++) sum += this._analyserData[i];
+        return Math.min(1, (sum / this._analyserData.length) / 130);
+    }
+
+    private updateMuteStateTracks(){
+        if(this._micStream){
+            this._micStream.getAudioTracks().forEach((t) => (t.enabled = !this.muted));
+        }
     }
 }
 
@@ -93,17 +178,21 @@ const sessionParam: string | null = params.get("id");
 const relayParam: string | null = params.get("relay");
 const relay: URL = relayParam ? new URL("ws://"+relayParam+"/join") : new URL("wss://webspeak.betrayd.net/join");
 
-let client: WebSpeakClient | undefined;
+const audioCtx = new AudioContext();
 
-let micStream: MediaStreamTrack | undefined;
+let client: WebSpeakClient | undefined;
+let awaitMic: boolean = false;
+
+let micInput: MicContainer = new MicContainer();
 
 const audioSources: Map<number, AudioSourceWrapper> = new Map<number, AudioSourceWrapper>();
 const audioProfiles: Map<string, AudioProfile> = new Map();
 
-function start(relayURL: URL, sessionId: string, initialMic: MediaStream): void{
-    if(initialMic && initialMic.getAudioTracks().length > 0) {
-        micStream = initialMic.getAudioTracks()[0];
-    }
+const listener = audioCtx.listener;
+
+function start(relayURL: URL, sessionId: string): void{
+
+
     const rtcConfig: RTCConfiguration = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }] };
     const config: WebspeakConfig = {
         relayURL: relayURL,
@@ -114,8 +203,38 @@ function start(relayURL: URL, sessionId: string, initialMic: MediaStream): void{
     const thisClient = new WebSpeakClient(config);
     client = thisClient;
 
+    thisClient.onFatalError.addListener((err) => {
+        let errorText: string = "An unknown error occurred";
+        if(err instanceof Error) {
+            errorText = err.message;
+        }
+
+        setConnectionStatus(2);
+        showError(errorText);
+    })
+
+    thisClient.onReady.addListener(() => {
+        if(micInput.micStream !== undefined){
+            awaitMic = false;
+            console.log("setting mic")
+            thisClient.setMic(micInput.micStream.getAudioTracks()[0]).then(
+                () => {
+
+                },
+                (reason) => {
+                    console.error("failed to set mic", reason);
+                });
+        }else{
+            awaitMic = true;
+        }
+    })
+
     thisClient.onConnected.addListener(() => {
-        updateMic(thisClient);
+        setConnectionStatus(0);
+    });
+
+    thisClient.onConnecting.addListener(() => {
+        setConnectionStatus(1);
     });
 
     thisClient.onConnectionReset.addListener(() => {
@@ -123,6 +242,21 @@ function start(relayURL: URL, sessionId: string, initialMic: MediaStream): void{
             audioProfiles.get(prof)?.html.remove();
         }
         audioProfiles.clear();
+    })
+
+    thisClient.onLocalPositionUpdated.addListener((event) => {
+        listener.positionX.value = event.pos.x;
+        listener.positionY.value = event.pos.y;
+        listener.positionZ.value = event.pos.z;
+
+        if(event.rot){
+            setListenerOrientationFromEuler(listener, event.rot.x, event.rot.y, event.rot.z);
+        }
+    })
+
+    thisClient.onAudioSourceAdded.addListener((source: AudioSource) => {
+        const wrapper = new AudioSourceWrapper(source);
+        audioSources.set(source.id, wrapper);
     })
 
     thisClient.onAudioProfileAdded.addListener((event) => {
@@ -145,12 +279,52 @@ function start(relayURL: URL, sessionId: string, initialMic: MediaStream): void{
     thisClient.start();
 }
 
-function updateMic(thisClient: WebSpeakClient){
-    if(micStream !== undefined) {
-        thisClient.setMic(micStream);
-    }else{
-        thisClient.setMic(null);
-    }
+/**
+ * Set AudioListener orientation from Euler angles.
+ *
+ * Assumes:
+ * - Euler order: Yaw (Y), Pitch (X), Roll (Z)
+ * - Right-handed coordinate system
+ * - Default forward direction is -Z
+ * - Up direction is +Y
+ *
+ * @param listener The Web Audio API AudioListener
+ * @param pitch Rotation around X axis (radians)
+ * @param yaw Rotation around Y axis (radians)
+ * @param roll Rotation around Z axis (radians)
+ */
+export function setListenerOrientationFromEuler(
+    listener: AudioListener,
+    pitch: number,
+    yaw: number,
+    roll: number
+): void {
+    const cp = Math.cos(pitch);
+    const sp = Math.sin(pitch);
+
+    const cy = Math.cos(yaw);
+    const sy = Math.sin(yaw);
+
+    const cr = Math.cos(roll);
+    const sr = Math.sin(roll);
+
+    // Forward vector (-Z axis rotated by yaw * pitch * roll)
+    const forwardX = -(cy * sp * cr + sy * sr);
+    const forwardY = -(sp * cr * sy - cy * sr);
+    const forwardZ = -(cp * cy);
+
+    // Up vector (+Y axis rotated by yaw * pitch * roll)
+    const upX = cy * sr - sy * sp * cr;
+    const upY = cp * cr;
+    const upZ = sy * sr + cy * sp * cr;
+
+    listener.forwardX.value = forwardX;
+    listener.forwardY.value = forwardY;
+    listener.forwardZ.value = forwardZ;
+
+    listener.upX.value = upX;
+    listener.upY.value = upY;
+    listener.upZ.value = upZ;
 }
 
 const app = document.getElementById("app")!;
@@ -159,14 +333,27 @@ const enterButton = document.getElementById("enterAppBtn")!;
 const sessionInput = document.getElementById("sessionId") as HTMLInputElement;
 const joinButton = document.getElementById("enterAppBtn") as HTMLButtonElement;
 
+const connectedIcon = document.getElementById("con-icon") as HTMLSpanElement;
+const connectedText = document.getElementById("con-text") as HTMLSpanElement;
+
 const settingsButton = document.querySelector<HTMLButtonElement>(".settings-btn");
 const settingsDrawer = document.querySelector<HTMLDivElement>("#settingsDrawer");
 const closeDrawerButton = document.querySelector<HTMLButtonElement>("#closeDrawerBtn");
+const echoCancelButton = document.querySelector<HTMLButtonElement>("#echo-cancel");
+const noiseSuppressButton = document.querySelector<HTMLButtonElement>("#noise-suppress");
+const autoGainButton = document.querySelector<HTMLButtonElement>("#auto-gain");
 
+const micMeterFill = document.querySelector<HTMLDivElement>("#micMeterFill");
 const muteButton = document.querySelector<HTMLButtonElement>("#mute-btn");
 const deafenButton = document.querySelector<HTMLButtonElement>("#deafen-btn");
 
 const playerList = document.querySelector<HTMLDivElement>("#player-list");
+
+const overlay = document.getElementById("errorOverlay");
+const message = document.getElementById("errorMessage");
+
+const closeButton = document.getElementById("errorCloseBtn");
+const okButton = document.getElementById("errorOkBtn");
 
 const toggles = document.querySelectorAll<HTMLButtonElement>(".toggle");
 
@@ -193,11 +380,34 @@ enterButton.addEventListener("click", async () => {
     }
 
     try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-            audio: true
-        });
 
-        start(relay, sessionId, stream);
+        micMeterLoop();
+        const method = async () => {
+            await micInput.init();
+            if(echoCancelButton && noiseSuppressButton && autoGainButton) {
+                try{
+                    const stream = await micInput.requestMic(echoCancelButton?.classList.contains("on"), noiseSuppressButton?.classList.contains("on"), autoGainButton?.classList.contains("on"));
+                    if(awaitMic){
+                        awaitMic = false;
+                        console.log("setting mic")
+                        client?.setMic(stream.getAudioTracks()[0]).then(
+                            () => {
+
+                            },
+                            (reason) => {
+                                console.error("failed to set mic", reason);
+                            });
+                    }
+                }
+                catch(e) {
+                    console.error("Failed to request mic", e);
+                }
+            }
+        };
+        method().then();
+
+
+        start(relay, sessionId);
 
     } catch (_err) {
 
@@ -223,33 +433,96 @@ if (settingsButton && settingsDrawer && closeDrawerButton) {
     });
 }
 
-muteButton?.addEventListener("click", () => {
+function micMeterLoop() {
+    let level = micInput.readMicLevel();
 
-    muteButton.classList.toggle("active");
+    if(micMeterFill) {micMeterFill.style.clipPath = `inset(0 ${100 - level*100}% 0 0)`;}
+    requestAnimationFrame(micMeterLoop);
+}
 
-    const text = muteButton.querySelector("span");
+muteButton?.addEventListener("click", muteButtonPressed);
 
-    if (text) {
-        text.textContent = muteButton.classList.contains("active")
-            ? "Muted"
-            : "Mute";
-    }
+function muteButtonPressed() {
+    muteButton?.classList.toggle("active");
 
-});
-
-
-deafenButton?.addEventListener("click", () => {
-
-    deafenButton.classList.toggle("active");
-
-    const text = deafenButton.querySelector("span");
+    const text = muteButton?.querySelector("span");
 
     if (text) {
-        text.textContent = deafenButton.classList.contains("active")
-            ? "Deafened"
-            : "Deafen";
+        if(muteButton?.classList.contains("active")){
+            micInput.muted = true;
+            text.textContent = "Muted";
+        }else{
+            micInput.muted = false;
+            text.textContent = "Mute";
+        }
     }
-});
+
+    if(deafenButton?.classList.contains("active")){
+        deafenButtonPressed();
+    }
+}
+
+
+deafenButton?.addEventListener("click", deafenButtonPressed);
+function deafenButtonPressed(){
+    {
+        if(!deafenButton?.classList.contains("active") && !muteButton?.classList.contains("active")){
+            muteButtonPressed();
+        }
+        deafenButton?.classList.toggle("active");
+
+        const text = deafenButton?.querySelector("span");
+
+        if (text) {
+            text.textContent = deafenButton?.classList.contains("active")
+                ? "Deafened"
+                : "Deafen";
+        }
+    }
+}
+
+closeButton?.addEventListener("click", hideError);
+okButton?.addEventListener("click", hideError);
+overlay?.addEventListener("click", (e) => {
+    if (e.target === overlay) {
+        hideError();
+    }
+})
+
+function hideError() {
+    overlay?.classList.add("hidden");
+}
+
+export function showError(text: string) {
+
+    if (message) {
+        message.textContent = text;
+    }
+
+    overlay?.classList.remove("hidden");
+}
+
+function setConnectionStatus(status: number) {
+    connectedIcon.classList.remove("inactive")
+    connectedIcon.classList.remove("connected")
+    connectedIcon.classList.remove("connecting")
+    connectedIcon.classList.remove("disconnected")
+    if(status === 0){
+        connectedIcon.classList.add("connected");
+        connectedText.textContent = "Connected";
+    }
+    else if(status === 1){
+        connectedIcon.classList.add("connecting");
+        connectedText.textContent = "Connecting";
+    }
+    else if(status === 2){
+        connectedIcon.classList.add("disconnected");
+        connectedText.textContent = "Disconnected";
+    }else{
+        connectedIcon.classList.add("inactive");
+        connectedText.textContent = "Inactive";
+    }
+}
 
 function addPlayerProf(audioProfile: AudioProfile) {
     playerList?.appendChild(audioProfile.html);
