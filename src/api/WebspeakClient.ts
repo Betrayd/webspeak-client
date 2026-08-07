@@ -27,6 +27,7 @@ export type AudioProfileRemoveEvent = {
     readonly uid: string;
 }
 
+//TODO: wrap each call in packetReceived in a new try catch because currently it states there is an error with json which there just isn't, because it's catching those errors
 export class WebSpeakClient {
     private readonly _webSpeakConfig: WebspeakConfig;
 
@@ -398,7 +399,7 @@ export class WebSpeakClient {
                         }
                     }
                 } catch(error: unknown) {
-                    console.error("Could not parse JSON from websocket on server", error);
+                    console.error("Error applying packet from the relay", error);
                     if(hasNotResolved){
                         hasNotResolved = false;
                         this._isFatal = true;
@@ -570,7 +571,7 @@ export class WebSpeakClient {
             }
             catch (error: unknown)
             {
-                console.error("Failed to parse JSON from reliable connection channel", error);
+                console.error("Error applying packet from reliable connection channel", error);
             }
         });
 
