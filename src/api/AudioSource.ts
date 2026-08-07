@@ -11,7 +11,7 @@ export class AudioSource{
 
     private readonly _positionUpdatedEvent: WebspeakEvent.Invokable<UpdatePositionEvent> = WebspeakEvent.create();
     private readonly _configUpdatedEvent: WebspeakEvent.Invokable<AudioSource.Config> = WebspeakEvent.create();
-    private readonly _trackUpdatedEvent: WebspeakEvent.Invokable<MediaStreamTrack> = WebspeakEvent.create();
+    private readonly _trackUpdatedEvent: WebspeakEvent.Invokable<MediaStreamTrack | undefined> = WebspeakEvent.create();
 
     private _config: AudioSource.Config = new AudioSource.Config();
     private _audioTrack?: MediaStreamTrack;
@@ -47,7 +47,7 @@ export class AudioSource{
     /**
      * Called when the audio source's input stream track is updated by the server. This usually happens shortly after creation
      */
-    public get onTrackUpdated(): WebspeakEvent<MediaStreamTrack> {
+    public get onTrackUpdated(): WebspeakEvent<MediaStreamTrack | undefined> {
         return this._trackUpdatedEvent;
     }
 
@@ -132,6 +132,7 @@ export class AudioSource{
      */
     public setAudioTrack(audioTrack: MediaStreamTrack | undefined){
         this._audioTrack = audioTrack;
+        this._trackUpdatedEvent.invoke(audioTrack)
     }
 
     /**

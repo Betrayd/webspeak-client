@@ -83,11 +83,50 @@ class AudioProfile{
 }
 
 class AudioSourceWrapper{
-    private _panner: PannerNode;
+    private readonly _panner: PannerNode;
     constructor(ctx: AudioContext, public readonly source: AudioSource) {
         const panner = new PannerNode(ctx, {
-
+            coneInnerAngle: 360,
+            coneOuterAngle: 0,
+            coneOuterGain: 0,
+            distanceModel: "inverse",
+            maxDistance: 26,
+            panningModel: "HRTF",
+            refDistance: 1,
+            rolloffFactor: 1,
         });
+
+        if(source.pos){
+            panner.positionX.value = source.pos.x;
+            panner.positionY.value = source.pos.y;
+            panner.positionZ.value = source.pos.z;
+        }
+
+        source.onTrackUpdated.addListener((track) => {
+            if(track){
+                const stream = new MediaStream([track]);
+                const source = ctx.createMediaStreamSource(stream);
+                this._panner.connect(source);
+            }
+            else{
+                this._panner.disconnect();
+            }
+        });
+
+        source.onPositionUpdated.addListener((event) => {
+            this._panner.positionX.value = event.pos.x;
+            this._panner.positionY.value = event.pos.y;
+            this._panner.positionZ.value = event.pos.z;
+            if(event.rot){
+                setPannerOrientationFromEuler(this._panner, event.rot.x, event.rot.y, event.rot.z);
+            }
+        })
+
+        this._panner = panner;
+    }
+
+    public get panner(): PannerNode {
+        return this._panner;
     }
 }
 
@@ -235,7 +274,7 @@ function start(relayURL: URL, sessionId: string): void{
             audioProfiles.get(prof)?.html.remove();
         }
         audioProfiles.clear();
-    })
+    });
 
     thisClient.onLocalPositionUpdated.addListener((event) => {
         listener.positionX.value = event.pos.x;
@@ -245,12 +284,20 @@ function start(relayURL: URL, sessionId: string): void{
         if(event.rot){
             setListenerOrientationFromEuler(listener, event.rot.x, event.rot.y, event.rot.z);
         }
-    })
+    });
 
     thisClient.onAudioSourceAdded.addListener((source: AudioSource) => {
-        const wrapper = new AudioSourceWrapper(source);
+        const wrapper = new AudioSourceWrapper(audioCtx, source);
         audioSources.set(source.id, wrapper);
-    })
+    });
+
+    thisClient.onAudioSourceRemoved.addListener((source) => {
+        const wrapper = audioSources.get(source.id);
+        if(wrapper){
+            wrapper.panner.disconnect();
+        }
+        audioSources.delete(source.id);
+    });
 
     thisClient.onAudioProfileAdded.addListener((event) => {
         const prof: AudioProfile = new AudioProfile(event.uid, event.id, event.name);
@@ -328,6 +375,45 @@ export function setListenerOrientationFromEuler(
     listener.upX.value = upX;
     listener.upY.value = upY;
     listener.upZ.value = upZ;
+}
+
+/**
+ * Set Panner nodes orientation from Euler angles.
+ *
+ * Assumes:
+ * - Euler order: Yaw (Y), Pitch (X), Roll (Z)
+ * - Right-handed coordinate system
+ * - Default forward direction is -Z
+ * - Up direction is +Y
+ *
+ * @param panner The Web Audio API PannerNode
+ * @param pitch Rotation around X axis (radians)
+ * @param yaw Rotation around Y axis (radians)
+ * @param roll Rotation around Z axis (radians)
+ */
+export function setPannerOrientationFromEuler(
+    panner: PannerNode,
+    pitch: number,
+    yaw: number,
+    roll: number
+): void {
+    const cp = Math.cos(pitch);
+    const sp = Math.sin(pitch);
+
+    const cy = Math.cos(yaw);
+    const sy = Math.sin(yaw);
+
+    const cr = Math.cos(roll);
+    const sr = Math.sin(roll);
+
+    // Forward vector (-Z axis rotated by yaw * pitch * roll)
+    const forwardX = -(cy * sp * cr + sy * sr);
+    const forwardY = -(sp * cr * sy - cy * sr);
+    const forwardZ = -(cp * cy);
+
+    panner.orientationX.value = forwardX;
+    panner.orientationY.value = forwardY;
+    panner.orientationZ.value = forwardZ;
 }
 
 const app = document.getElementById("app")!;
