@@ -15,14 +15,6 @@ export class RTCConnectionWrapper {
     constructor(config: RTCConfiguration) {
         this._rtcConnection = new RTCPeerConnection(config);
 
-         this._rtcConnection.addTransceiver('audio', { direction: 'sendonly' });
-        this.rtcConnection.addEventListener("track", (track: RTCTrackEvent) => {
-            const mediaTransceiver: RTCRtpTransceiver = track.transceiver;
-            if(mediaTransceiver.direction === "sendonly"){
-                this._micTransceiver = mediaTransceiver;
-                this.tryReady();
-            }
-        })
         //ideally this should be pre-negotiated, but I'm scared of setting the session description
         this._rtcConnection.ondatachannel = (event: RTCDataChannelEvent) => {
             const receiveChannel: RTCDataChannel = event.channel;
@@ -70,6 +62,19 @@ export class RTCConnectionWrapper {
 
     public get onUnreliablePacketReceived(): WebspeakEvent<Uint8Array>{
         return this._unreliablePacketReceivedEvent;
+    }
+
+    public setRemoteDescription(description: RTCSessionDescriptionInit) {
+        return this._rtcConnection.setRemoteDescription(description).then(
+            ()=>{
+                this._micTransceiver = this._rtcConnection.getTransceivers().find(t => t.receiver.track.kind === "audio");
+
+                this._micTransceiver!.direction = "sendonly";
+                console.log(this._micTransceiver);
+            }, ()=>{
+
+            }
+        );
     }
 
     public setMicTrack(track: MediaStreamTrack | null): Promise<void>{

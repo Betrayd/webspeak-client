@@ -329,7 +329,7 @@ export class WebSpeakClient {
 
                             //set the remote description
                             try {
-                                await attemptedRtcCon?.rtcConnection.setRemoteDescription({
+                                await attemptedRtcCon?.setRemoteDescription({
                                     type: RTCSignalingMessages.sessionDescription.getRTCSdpType(remoteDesc),
                                     sdp: remoteDesc.sdp,
                                 });
@@ -462,7 +462,7 @@ export class WebSpeakClient {
                         const remoteDesc: RTCSignalingMessages.sessionDescription = message as RTCSignalingMessages.sessionDescription;
                         (async () => {
                             try {
-                                await thisCon.rtcConnection.setRemoteDescription({
+                                await thisCon.setRemoteDescription({
                                     type: RTCSignalingMessages.sessionDescription.getRTCSdpType(remoteDesc),
                                     sdp: remoteDesc.sdp,
                                 });
@@ -622,6 +622,10 @@ export class WebSpeakClient {
                 console.error("Received media track for unknown audio source", mediaTrack.id);
             }
         });
+
+        thisCon.onReady.addListener(() => {
+            this._rtcReadyEvent.invoke();
+        })
 
         this._rtcConnectedEvent.invoke();
     }
