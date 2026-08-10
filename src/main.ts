@@ -84,8 +84,11 @@ class AudioProfile{
 
 class AudioSourceWrapper{
     private readonly _panner: PannerNode;
-
     private mediaSource?: MediaStreamAudioSourceNode;
+
+    // ADD THIS: Keep a reference to a dummy audio element
+    private _dummyAudio?: HTMLAudioElement;
+
     constructor(ctx: AudioContext, public readonly source: AudioSource) {
         const panner = new PannerNode(ctx, {
             coneInnerAngle: 360,
@@ -110,15 +113,24 @@ class AudioSourceWrapper{
 
                 if (!track) {
                     this.mediaSource = undefined;
+                    this._dummyAudio = undefined; // Cleanup
                     return;
                 }
 
                 const stream = new MediaStream([track]);
+
+                // ADD THIS: Bind the stream to an HTMLAudioElement to force the browser to pull the audio data
+                this._dummyAudio = new Audio();
+                this._dummyAudio.muted = true; // Mute so we only hear the spatialized PannerNode audio
+                this._dummyAudio.srcObject = stream;
+                this._dummyAudio.play().catch(e => console.warn("Dummy audio play failed", e));
+
                 this.mediaSource = ctx.createMediaStreamSource(stream);
                 this.mediaSource.connect(this._panner);
             }
             else{
                 this.mediaSource?.disconnect();
+                this._dummyAudio = undefined; // Cleanup
             }
         });
 
@@ -142,6 +154,12 @@ class AudioSourceWrapper{
     public disconnect():void{
         this.mediaSource?.disconnect();
         this._panner.disconnect();
+
+        // ADD THIS: Release the dummy audio element on disconnect
+        if (this._dummyAudio) {
+            this._dummyAudio.srcObject = null;
+            this._dummyAudio = undefined;
+        }
     }
 }
 
@@ -503,7 +521,12 @@ enterButton.addEventListener("click", async () => {
         };
         method().then();
 
-
+        if(audioCtx.state === "suspended"){
+            audioCtx.resume().catch((e) => {
+                console.error("Error with audio playback", e);
+                showError("Audio playback failed to start");
+            });
+        }
         start(relay, sessionId);
 
     } catch (_err) {
