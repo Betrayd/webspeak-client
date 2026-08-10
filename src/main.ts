@@ -84,6 +84,8 @@ class AudioProfile{
 
 class AudioSourceWrapper{
     private readonly _panner: PannerNode;
+
+    private mediaSource?: MediaStreamAudioSourceNode;
     constructor(ctx: AudioContext, public readonly source: AudioSource) {
         const panner = new PannerNode(ctx, {
             coneInnerAngle: 360,
@@ -104,12 +106,19 @@ class AudioSourceWrapper{
 
         source.onTrackUpdated.addListener((track) => {
             if(track){
+                this.mediaSource?.disconnect();
+
+                if (!track) {
+                    this.mediaSource = undefined;
+                    return;
+                }
+
                 const stream = new MediaStream([track]);
-                const source = ctx.createMediaStreamSource(stream);
-                this._panner.connect(source);
+                this.mediaSource = ctx.createMediaStreamSource(stream);
+                this.mediaSource.connect(this._panner);
             }
             else{
-                this._panner.disconnect();
+                this.mediaSource?.disconnect();
             }
         });
 
@@ -122,11 +131,17 @@ class AudioSourceWrapper{
             }
         })
 
+        panner.connect(ctx.destination);
         this._panner = panner;
     }
 
     public get panner(): PannerNode {
         return this._panner;
+    }
+
+    public disconnect():void{
+        this.mediaSource?.disconnect();
+        this._panner.disconnect();
     }
 }
 
@@ -215,7 +230,7 @@ class MicContainer{
 const params: URLSearchParams = new URLSearchParams(window.location.search);
 const sessionParam: string | null = params.get("id");
 const relayParam: string | null = params.get("relay");
-const relay: URL = relayParam ? new URL("ws://"+relayParam+"/join") : new URL("wss://webspeak.betrayd.net/join");
+const relay: URL = relayParam ? new URL(relayParam+"/join") : new URL("wss://webspeak.betrayd.net/join");
 
 const audioCtx = new AudioContext();
 
@@ -294,7 +309,7 @@ function start(relayURL: URL, sessionId: string): void{
     thisClient.onAudioSourceRemoved.addListener((source) => {
         const wrapper = audioSources.get(source.id);
         if(wrapper){
-            wrapper.panner.disconnect();
+            wrapper.disconnect();
         }
         audioSources.delete(source.id);
     });

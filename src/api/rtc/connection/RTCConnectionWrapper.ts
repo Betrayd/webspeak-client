@@ -67,10 +67,12 @@ export class RTCConnectionWrapper {
     public setRemoteDescription(description: RTCSessionDescriptionInit) {
         return this._rtcConnection.setRemoteDescription(description).then(
             ()=>{
-                this._micTransceiver = this._rtcConnection.getTransceivers().find(t => t.receiver.track.kind === "audio");
+                if(!this._micTransceiver) {
+                    this._micTransceiver = this._rtcConnection.getTransceivers().find(t => t.receiver.track.kind === "audio");
 
-                this._micTransceiver!.direction = "sendonly";
-                this.tryReady();
+                    this._micTransceiver!.direction = "sendonly";
+                    this.tryReady();
+                }
             }, ()=>{
 
             }
