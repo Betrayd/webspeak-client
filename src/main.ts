@@ -248,6 +248,12 @@ class MicContainer{
     private _analyser?: AnalyserNode;
     private _analyserData?: Uint8Array<ArrayBuffer>;
 
+    private _micDestination?: MediaStreamAudioDestinationNode;
+
+    public get processedTrack(): MediaStreamTrack | undefined {
+        return this._micDestination?.stream.getAudioTracks()[0];
+    }
+
     public get muted(): boolean {
         return this._muted;
     }
@@ -304,7 +310,10 @@ class MicContainer{
         this._analyser = this.ctx.createAnalyser();
         this._analyser.fftSize = 256;
         this._analyserData = new Uint8Array(this._analyser.frequencyBinCount);
-        this._micSource.connect(this._micGain).connect(this._analyser);
+        this._micDestination = this.ctx.createMediaStreamDestination();
+        this._micSource.connect(this._micGain);
+        this._micGain.connect(this._analyser);
+        this._micGain.connect(this._micDestination);
 
         this.updateMuteStateTracks();
 
@@ -322,6 +331,9 @@ class MicContainer{
     private updateMuteStateTracks(){
         if(this._micStream){
             this._micStream.getAudioTracks().forEach((t) => (t.enabled = !this.muted));
+        }
+        if (this._micDestination) {
+            this._micDestination.stream.getAudioTracks().forEach((t) => (t.enabled = !this.muted));
         }
     }
 }
@@ -370,9 +382,9 @@ function start(relayURL: URL, sessionId: string): void{
     })
 
     thisClient.onReady.addListener(() => {
-        if(micInput.micStream !== undefined){
+        if(micInput.micStream !== undefined && micInput.processedTrack){
             awaitMic = false;
-            setMicSource(micInput.micStream);
+            setMicSource(micInput.processedTrack);
         }else{
             awaitMic = true;
         }
@@ -459,8 +471,8 @@ function start(relayURL: URL, sessionId: string): void{
     thisClient.start();
 }
 
-function setMicSource(stream: MediaStream){
-    client?.setMic(stream.getAudioTracks()[0]).then(
+function setMicSource(track: MediaStreamTrack){
+    client?.setMic(track).then(
         () => {
             console.log("Set mic stream to current microphone");
         },
@@ -616,13 +628,11 @@ enterButton.addEventListener("click", async () => {
             await micInput.init();
             if(echoCancelButton && noiseSuppressButton && autoGainButton) {
                 try{
-                    const stream = await micInput.requestMic(echoCancelButton?.classList.contains("on"), noiseSuppressButton?.classList.contains("on"), autoGainButton?.classList.contains("on"));
-
+                    await micInput.requestMic(echoCancelButton?.classList.contains("on"), noiseSuppressButton?.classList.contains("on"), autoGainButton?.classList.contains("on"));
                     await populateDevices();
-
-                    if(awaitMic){
+                    if(awaitMic && micInput.processedTrack){ // Check for track
                         awaitMic = false;
-                        setMicSource(stream);
+                        setMicSource(micInput.processedTrack); // Pass the processed track
                     }
                 }
                 catch(e) {
@@ -731,11 +741,11 @@ async function updateMicSettings() {
     const deviceId = inputSelect?.value;
 
     try {
-        const stream = await micInput.requestMic(echo, noise, agc, deviceId);
+        await micInput.requestMic(echo, noise, agc, deviceId);
 
-        // FIX: Ensure the new stream actually gets pushed to the WebRTC Client
-        if (!awaitMic) {
-            setMicSource(stream);
+        // Pass the processed track instead of the raw stream
+        if (!awaitMic && micInput.processedTrack) {
+            setMicSource(micInput.processedTrack);
         }
     } catch (e) {
         console.error("Failed to update mic settings", e);
