@@ -347,6 +347,7 @@ const AudioContextClass = window.AudioContext || (window as any).webkitAudioCont
 const audioCtx = new AudioContextClass();
 const masterGainNode = audioCtx.createGain();
 masterGainNode.connect(audioCtx.destination);
+let masterGain: number = masterGainNode.gain.value;
 
 let client: WebSpeakClient | undefined;
 let awaitMic: boolean = false;
@@ -780,7 +781,10 @@ document.getElementById("outputDeviceSelect")?.addEventListener("change", async 
 const volumeGainRange = document.getElementById("volumeGainRange") as HTMLInputElement;
 volumeGainRange?.addEventListener("input", (e) => {
     const val = parseInt((e.target as HTMLInputElement).value, 10);
-    masterGainNode.gain.value = val / 100;
+    masterGain = val / 100.0;
+    if(deafenButton && !(deafenButton.classList.contains("active"))){
+        masterGainNode.gain.value = masterGain;
+    }
 
     const label = volumeGainRange.parentElement?.nextElementSibling;
     if (label) label.textContent = `${val}%`;
@@ -829,9 +833,13 @@ function deafenButtonPressed(){
         const text = deafenButton?.querySelector("span");
 
         if (text) {
-            text.textContent = deafenButton?.classList.contains("active")
-                ? "Deafened"
-                : "Deafen";
+            if(deafenButton?.classList.contains("active")){
+                masterGainNode.gain.value = 0;
+                text.textContent = "Deafened";
+            }else{
+                masterGainNode.gain.value = masterGain;
+                text.textContent = "Deafen";
+            }
         }
     }
 }
