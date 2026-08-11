@@ -2,11 +2,15 @@ import {WebSpeakClient} from "./api/WebspeakClient.ts";
 import type {WebspeakConfig} from "./api/WebspeakConfig.ts";
 import {AudioSource} from "./api/AudioSource.ts";
 
+//TODO: I forgot to add the speaking animation to player profiles. my bad. This can still be done.
 class AudioProfile{
     public audioId: number | null | undefined;
     private readonly _html: HTMLDivElement;
-
-    constructor(public readonly uid: string, audioId: number | null | undefined, public readonly name: string){
+    private readonly _muteButton: HTMLButtonElement;
+    private readonly _volumeSlider: HTMLInputElement;
+    private readonly audioSourceMap: Map<number, AudioSourceWrapper>;
+    constructor(audioSourceMap: Map<number, AudioSourceWrapper>, public readonly uid: string, audioId: number | null | undefined, public readonly name: string){
+        this.audioSourceMap = audioSourceMap;
         this.audioId = audioId;
 
         const card = document.createElement("div");
@@ -66,13 +70,28 @@ class AudioProfile{
 
         muteButton.addEventListener("click", () => {
             muteButton.classList.toggle("active");
+            const source = this.connectedSource();
+            if (source) {
+                if (this.muted) {
+                    source.mute();
+                } else {
+                    source.unmute();
+                }
+            }
         });
+
+        this._muteButton = muteButton;
 
         const volumeInput = card.getElementsByTagName("input")[0];
 
         volumeInput.addEventListener("change", () => {
-            console.log(`player slider updated ${name}: ${volumeInput.value}`);
+            const source = this.connectedSource();
+            if (source) {
+                source.gain = this.gain;
+            }
         });
+
+        this._volumeSlider = volumeInput;
 
         this._html = card;
     }
@@ -80,15 +99,35 @@ class AudioProfile{
     public get html(): HTMLDivElement{
         return this._html;
     }
+
+    public get muted(): boolean{
+        return this._muteButton.classList.contains("active");
+    }
+
+    public get gain(): number{
+        return this._volumeSlider.valueAsNumber / 100.0;
+    }
+
+    public connectedSource(): AudioSourceWrapper | undefined {
+        if(this.audioId){
+            const source = this.audioSourceMap.get(this.audioId);
+            if(source){
+                return source;
+            }
+        }
+        return undefined;
+    }
 }
 
 class AudioSourceWrapper{
     private readonly _panner: PannerNode;
-    private mediaSource?: MediaStreamAudioSourceNode;
+    private readonly _gainNode: GainNode;
 
+    private _gain: number = 1.0;
+    private _muted: boolean = false;
+    private mediaSource?: MediaStreamAudioSourceNode;
     // ADD THIS: Keep a reference to a dummy audio element
     private _dummyAudio?: HTMLAudioElement;
-
     constructor(ctx: AudioContext, public readonly source: AudioSource) {
         const panner = new PannerNode(ctx, {
             coneInnerAngle: 360,
@@ -143,7 +182,9 @@ class AudioSourceWrapper{
             }
         })
 
-        panner.connect(ctx.destination);
+        this._gainNode = ctx.createGain();
+        this._gainNode.connect(ctx.destination);
+        panner.connect(this._gainNode);
         this._panner = panner;
     }
 
@@ -151,14 +192,36 @@ class AudioSourceWrapper{
         return this._panner;
     }
 
+    public get muted(): boolean{
+        return this._muted;
+    }
+
     public disconnect():void{
         this.mediaSource?.disconnect();
+        this._gainNode.disconnect();
         this._panner.disconnect();
 
         // ADD THIS: Release the dummy audio element on disconnect
         if (this._dummyAudio) {
             this._dummyAudio.srcObject = null;
             this._dummyAudio = undefined;
+        }
+    }
+
+    public mute():void{
+        this._muted = true;
+        this._gainNode.gain.value = 0;
+    }
+
+    public unmute():void{
+        this._muted = false;
+        this._gainNode.gain.value = this._gain;
+    }
+
+    public set gain(value: number){
+        this._gain = value;
+        if(!this._muted){
+            this._gainNode.gain.value = this._gain;
         }
     }
 }
@@ -306,7 +369,11 @@ function start(relayURL: URL, sessionId: string): void{
         for(const prof in audioProfiles){
             audioProfiles.get(prof)?.html.remove();
         }
+        for(const [_key, src] of audioSources){
+            src.disconnect();
+        }
         audioProfiles.clear();
+        audioSources.clear();
     });
 
     thisClient.onLocalPositionUpdated.addListener((event) => {
@@ -321,6 +388,16 @@ function start(relayURL: URL, sessionId: string): void{
 
     thisClient.onAudioSourceAdded.addListener((source: AudioSource) => {
         const wrapper = new AudioSourceWrapper(audioCtx, source);
+        for(const [_key, prof] of audioProfiles){
+            if(prof.audioId === source.id){
+                if(prof.muted){
+                    wrapper.mute();
+                }
+                wrapper.gain = prof.gain;
+
+                break;
+            }
+        }
         audioSources.set(source.id, wrapper);
     });
 
@@ -333,11 +410,20 @@ function start(relayURL: URL, sessionId: string): void{
     });
 
     thisClient.onAudioProfileAdded.addListener((event) => {
-        const prof: AudioProfile = new AudioProfile(event.uid, event.id, event.name);
+        const prof: AudioProfile = new AudioProfile(audioSources, event.uid, event.id, event.name);
         audioProfiles.set(event.uid, prof);
 
         addPlayerProf(prof);
     });
+
+    thisClient.onAudioProfileUpdated.addListener((event) => {
+        const prof = audioProfiles.get(event.uid);
+        if(prof){
+            prof.audioId = event.id;
+        }else{
+            console.warn(`Could not find audio profile to update for ${event.uid}`);
+        }
+    })
 
     thisClient.onAudioProfileRemoved.addListener((event) => {
         const prof = audioProfiles.get(event.uid);
