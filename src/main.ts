@@ -128,7 +128,7 @@ class AudioSourceWrapper{
     private mediaSource?: MediaStreamAudioSourceNode;
     // ADD THIS: Keep a reference to a dummy audio element
     private _dummyAudio?: HTMLAudioElement;
-    constructor(ctx: AudioContext, public readonly source: AudioSource) {
+    constructor(ctx: AudioContext, outNode: AudioNode, public readonly source: AudioSource) {
         const panner = new PannerNode(ctx, {
             coneInnerAngle: 360,
             coneOuterAngle: 0,
@@ -158,11 +158,14 @@ class AudioSourceWrapper{
 
                 const stream = new MediaStream([track]);
 
-                // ADD THIS: Bind the stream to an HTMLAudioElement to force the browser to pull the audio data
                 this._dummyAudio = new Audio();
-                this._dummyAudio.muted = true; // Mute so we only hear the spatialized PannerNode audio
+                this._dummyAudio.muted = true;
+                this._dummyAudio.style.display = "none"; // Hide it
+                document.body.appendChild(this._dummyAudio); // MOBILE FIX: Attach to DOM
+
                 this._dummyAudio.srcObject = stream;
-                this._dummyAudio.play().catch(e => console.warn("Dummy audio play failed", e));
+                // Handle the play promise so mobile doesn't throw unhandled rejections
+                this._dummyAudio.play().catch(e => console.warn("Dummy audio play blocked by mobile autoplay rules", e));
 
                 this.mediaSource = ctx.createMediaStreamSource(stream);
                 this.mediaSource.connect(this._panner);
@@ -183,7 +186,7 @@ class AudioSourceWrapper{
         })
 
         this._gainNode = ctx.createGain();
-        this._gainNode.connect(ctx.destination);
+        this._gainNode.connect(outNode);
         panner.connect(this._gainNode);
         this._panner = panner;
     }
@@ -196,14 +199,22 @@ class AudioSourceWrapper{
         return this._muted;
     }
 
+    public async setOutputDevice(deviceId: string) {
+        // Modern browsers support setSinkId on HTMLAudioElement
+        if (this._dummyAudio && typeof (this._dummyAudio as any).setSinkId === "function") {
+            await (this._dummyAudio as any).setSinkId(deviceId);
+        }
+    }
+
     public disconnect():void{
         this.mediaSource?.disconnect();
         this._gainNode.disconnect();
         this._panner.disconnect();
 
-        // ADD THIS: Release the dummy audio element on disconnect
         if (this._dummyAudio) {
+            this._dummyAudio.pause();
             this._dummyAudio.srcObject = null;
+            this._dummyAudio.remove(); // MOBILE FIX: Remove from DOM
             this._dummyAudio = undefined;
         }
     }
@@ -262,18 +273,25 @@ class MicContainer{
     }
 
     public async init(){
-        this.ctx = new window.AudioContext();
+        const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+        this.ctx = new AudioContextClass();
     }
 
-    public async requestMic(cancelEcho: boolean, noiseSuppress: boolean, autoGain: boolean):Promise<MediaStream> {
+    public async requestMic(cancelEcho: boolean, noiseSuppress: boolean, autoGain: boolean, deviceId?: string):Promise<MediaStream> {
         if(this.ctx === undefined){
             throw new Error("ctx not set");
         }
+
+        if (this._micStream) {
+            this._micStream.getTracks().forEach(track => track.stop());
+        }
+
         const constraints = {
             audio: {
                 echoCancellation: cancelEcho,
                 noiseSuppression: noiseSuppress,
                 autoGainControl: autoGain,
+                ...(deviceId ? { deviceId: { exact: deviceId } } : {}) // Apply specific device if selected
             },
         };
         const stream = await navigator.mediaDevices.getUserMedia(constraints);
@@ -313,7 +331,10 @@ const sessionParam: string | null = params.get("id");
 const relayParam: string | null = params.get("relay");
 const relay: URL = relayParam ? new URL(relayParam+"/join") : new URL("wss://webspeak.betrayd.net/join");
 
-const audioCtx = new AudioContext();
+const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+const audioCtx = new AudioContextClass();
+const masterGainNode = audioCtx.createGain();
+masterGainNode.connect(audioCtx.destination);
 
 let client: WebSpeakClient | undefined;
 let awaitMic: boolean = false;
@@ -387,7 +408,7 @@ function start(relayURL: URL, sessionId: string): void{
     });
 
     thisClient.onAudioSourceAdded.addListener((source: AudioSource) => {
-        const wrapper = new AudioSourceWrapper(audioCtx, source);
+        const wrapper = new AudioSourceWrapper(audioCtx, masterGainNode, source);
         for(const [_key, prof] of audioProfiles){
             if(prof.audioId === source.id){
                 if(prof.muted){
@@ -547,6 +568,7 @@ const connectedText = document.getElementById("con-text") as HTMLSpanElement;
 const settingsButton = document.querySelector<HTMLButtonElement>(".settings-btn");
 const settingsDrawer = document.querySelector<HTMLDivElement>("#settingsDrawer");
 const closeDrawerButton = document.querySelector<HTMLButtonElement>("#closeDrawerBtn");
+
 const echoCancelButton = document.querySelector<HTMLButtonElement>("#echo-cancel");
 const noiseSuppressButton = document.querySelector<HTMLButtonElement>("#noise-suppress");
 const autoGainButton = document.querySelector<HTMLButtonElement>("#auto-gain");
@@ -595,6 +617,9 @@ enterButton.addEventListener("click", async () => {
             if(echoCancelButton && noiseSuppressButton && autoGainButton) {
                 try{
                     const stream = await micInput.requestMic(echoCancelButton?.classList.contains("on"), noiseSuppressButton?.classList.contains("on"), autoGainButton?.classList.contains("on"));
+
+                    await populateDevices();
+
                     if(awaitMic){
                         awaitMic = false;
                         setMicSource(stream);
@@ -639,6 +664,121 @@ if (settingsButton && settingsDrawer && closeDrawerButton) {
     });
 }
 
+echoCancelButton?.addEventListener("click", async () => {
+    if(echoCancelButton && noiseSuppressButton && autoGainButton) {
+        try{
+            await micInput.requestMic(echoCancelButton?.classList.contains("on"), noiseSuppressButton?.classList.contains("on"), autoGainButton?.classList.contains("on"))
+        }
+        catch(e) {
+            console.error("Failed to request mic", e);
+        }
+    }
+});
+
+// --- DEVICE ENUMERATION ---
+async function populateDevices() {
+    try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const inputSelect = document.getElementById("inputDeviceSelect") as HTMLSelectElement;
+        const outputSelect = document.getElementById("outputDeviceSelect") as HTMLSelectElement;
+
+        // --- MOBILE FIX: Check for setSinkId support ---
+        const supportsSetSinkId = 'setSinkId' in HTMLAudioElement.prototype;
+        if (!supportsSetSinkId && outputSelect) {
+            // Hide the entire output setting group if unsupported
+            const outputGroup = outputSelect.closest('.setting-group');
+            if (outputGroup) {
+                (outputGroup as HTMLElement).style.display = 'none';
+            }
+        }
+
+        if (!inputSelect) return;
+
+        const currentInput = inputSelect.value;
+        const currentOutput = outputSelect?.value;
+
+        inputSelect.innerHTML = "";
+        if (outputSelect) outputSelect.innerHTML = "";
+
+        devices.forEach(device => {
+            const option = document.createElement("option");
+            option.value = device.deviceId;
+
+            if (device.kind === "audioinput") {
+                option.text = device.label || `Microphone ${inputSelect.length + 1}`;
+                inputSelect.appendChild(option);
+            } else if (device.kind === "audiooutput" && supportsSetSinkId) {
+                option.text = device.label || `Speaker ${outputSelect.length + 1}`;
+                outputSelect.appendChild(option);
+            }
+        });
+
+        if (currentInput) inputSelect.value = currentInput;
+        if (currentOutput && supportsSetSinkId) outputSelect.value = currentOutput;
+
+    } catch (err) {
+        console.error("Failed to enumerate devices", err);
+    }
+}
+
+// --- UNIFIED MIC SETTINGS UPDATER ---
+async function updateMicSettings() {
+    const echo = echoCancelButton?.classList.contains("on") ?? true;
+    const noise = noiseSuppressButton?.classList.contains("on") ?? true;
+    const agc = autoGainButton?.classList.contains("on") ?? true;
+
+    const inputSelect = document.getElementById("inputDeviceSelect") as HTMLSelectElement;
+    const deviceId = inputSelect?.value;
+
+    try {
+        const stream = await micInput.requestMic(echo, noise, agc, deviceId);
+
+        // FIX: Ensure the new stream actually gets pushed to the WebRTC Client
+        if (!awaitMic) {
+            setMicSource(stream);
+        }
+    } catch (e) {
+        console.error("Failed to update mic settings", e);
+    }
+}
+
+document.getElementById("inputDeviceSelect")?.addEventListener("change", updateMicSettings);
+const inputGainRange = document.getElementById("inputGainRange") as HTMLInputElement;
+inputGainRange?.addEventListener("input", (e) => {
+    const val = parseInt((e.target as HTMLInputElement).value, 10);
+    micInput.gain = val / 100;
+
+    const label = inputGainRange.parentElement?.nextElementSibling;
+    if (label) label.textContent = `${val}%`;
+});
+document.getElementById("outputDeviceSelect")?.addEventListener("change", async (e) => {
+    const deviceId = (e.target as HTMLSelectElement).value;
+    try {
+        // Update the Web Audio API Context sink (Modern browsers)
+        if (typeof (audioCtx as any).setSinkId === "function") {
+            await (audioCtx as any).setSinkId(deviceId);
+        }
+
+        // Update all active dummy audio elements
+        for (const [_key, wrapper] of audioSources) {
+            await wrapper.setOutputDevice(deviceId);
+        }
+    } catch (err) {
+        console.error("Failed to set output device:", err);
+    }
+});
+const volumeGainRange = document.getElementById("volumeGainRange") as HTMLInputElement;
+volumeGainRange?.addEventListener("input", (e) => {
+    const val = parseInt((e.target as HTMLInputElement).value, 10);
+    masterGainNode.gain.value = val / 100;
+
+    const label = volumeGainRange.parentElement?.nextElementSibling;
+    if (label) label.textContent = `${val}%`;
+});
+echoCancelButton?.addEventListener("click", updateMicSettings);
+noiseSuppressButton?.addEventListener("click", updateMicSettings);
+autoGainButton?.addEventListener("click", updateMicSettings);
+
 function micMeterLoop() {
     let level = micInput.readMicLevel();
 
@@ -647,7 +787,6 @@ function micMeterLoop() {
 }
 
 muteButton?.addEventListener("click", muteButtonPressed);
-
 function muteButtonPressed() {
     muteButton?.classList.toggle("active");
 
